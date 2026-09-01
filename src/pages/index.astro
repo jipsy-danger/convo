@@ -1,0 +1,263 @@
+---
+import '../styles/medium.css';
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Convo • Project & Team Lounge</title>
+</head>
+<body>
+  <div class="app-layout">
+    
+    <!-- LEFT SIDEBAR: Multiple Channels & Projects -->
+    <aside class="sidebar">
+      <div class="brand-section">
+        <div class="brand-logo">C</div>
+        <div class="brand-name">convo</div>
+      </div>
+
+      <nav class="nav-groups">
+        <!-- Group 1: General Spaces -->
+        <div>
+          <div class="nav-label">Community Lounge</div>
+          <a class="nav-item active" onclick="switchChannel('general', '# General Lounge', 'Common discussion corner for all members.')">
+            <span># general</span>
+          </a>
+          <a class="nav-item" onclick="switchChannel('announcements', '# Announcements', 'Official team broadcast and updates.')">
+            <span>📢 announcements</span>
+          </a>
+        </div>
+
+        <!-- Group 2: Project Spaces -->
+        <div>
+          <div class="nav-label">Active Projects</div>
+          <a class="nav-item" onclick="switchChannel('robotics', '⚡ Robotics & ROS 2', 'Firmware, actuators, sensors, and ROS nodes.')">
+            <span>⚡ robotics-core</span>
+            <span class="project-tag">v2.1</span>
+          </a>
+          <a class="nav-item" onclick="switchChannel('open-source', '🌐 Open Source Lab', 'Campus projects, issues, and PR reviews.')">
+            <span>🌐 os-lab</span>
+            <span class="project-tag">lab</span>
+          </a>
+          <a class="nav-item" onclick="switchChannel('hardware-bom', '📦 Hardware & BOM', 'Components procurement, drivers, and circuit logs.')">
+            <span>📦 hardware-bom</span>
+            <span class="project-tag">docs</span>
+          </a>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- RIGHT STAGE: Chat Feed & Super Admin Panel -->
+    <section class="main-stage">
+      
+      <!-- Testing Role Bar -->
+      <div class="dev-sim-bar">
+        <span>Active Identity Simulation:</span>
+        <div class="sim-buttons">
+          <button class="sim-btn active" id="btn4999" onclick="setRole('4999', 'Atitya', 'superadmin')">1. Super Admin (4999 - Atitya)</button>
+          <button class="sim-btn" id="btn7001" onclick="setRole('7001', 'Sarah (Lead)', 'admin')">2. Admin (7001)</button>
+          <button class="sim-btn" id="btn1042" onclick="setRole('1042', 'Rakhul', 'user')">3. User (1042)</button>
+        </div>
+      </div>
+
+      <!-- Channel Header -->
+      <header class="channel-header">
+        <div class="channel-info">
+          <h2 id="channelTitle"># General Lounge</h2>
+          <p id="channelDesc">Common discussion corner for all members.</p>
+        </div>
+        <div id="userBadgeArea">
+          <span id="currentUserDisplay" style="font-family: var(--font-sans); font-weight: 600; margin-right: 8px;">Atitya</span>
+          <span id="currentUserRole" class="role-pill role-superadmin">SUPERADMIN (4999)</span>
+        </div>
+      </header>
+
+      <!-- Scrollable Message Area -->
+      <main class="chat-scroll-area">
+        
+        <!-- Super Admin Panel: Only visible to 4999 -->
+        <section id="superAdminBox" class="admin-card">
+          <h4>🛡️ Super Admin Control Deck (PIN 4999)</h4>
+          <div id="userRows">
+            <div class="user-row">
+              <span><strong>Atitya</strong> (PIN: 4999)</span>
+              <span class="role-pill role-superadmin">superadmin</span>
+            </div>
+            <div class="user-row">
+              <span><strong>Sarah (Lead)</strong> (PIN: 7001)</span>
+              <div>
+                <span class="role-pill role-admin" style="margin-right: 8px;">admin</span>
+                <button class="sim-btn">Demote</button>
+              </div>
+            </div>
+            <div class="user-row">
+              <span><strong>Rakhul</strong> (PIN: 1042)</span>
+              <div>
+                <span class="role-pill role-user" style="margin-right: 8px;">user</span>
+                <button class="sim-btn">Promote</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Message Feed List -->
+        <div id="messagesContainer" style="display: flex; flex-direction: column; gap: 20px;">
+          <!-- Dynamically filled by JS -->
+        </div>
+
+      </main>
+
+      <!-- Bottom Input Dock -->
+      <div class="input-dock">
+        <form class="input-container" id="sendForm" onsubmit="event.preventDefault(); handleSend();">
+          <input type="text" id="chatInput" class="chat-input" placeholder="Message this channel..." autocomplete="off" />
+          <button type="submit" class="btn-send">Post</button>
+        </form>
+      </div>
+
+    </section>
+  </div>
+
+  <!-- Client-Side State Engine & Permission Logic -->
+  <script is:inline>
+    // Channel Message Mock DB (Includes unique IDs for Edit/Delete)
+    const channelStore = {
+      'general': [
+        { id: 101, author: 'Atitya', role: 'superadmin', pin: '4999', time: '14:10', text: 'Welcome to Convo! This is our unified project and team channel portal.' },
+        { id: 102, author: 'Sarah (Lead)', role: 'admin', pin: '7001', time: '14:14', text: 'Dark gradient layout looks much cleaner without the visible role badges.' },
+        { id: 103, author: 'Rakhul', role: 'user', pin: '1042', time: '14:20', text: 'Ready. All channel switches work seamlessly.' }
+      ],
+      'announcements': [
+        { id: 201, author: 'Atitya', role: 'superadmin', pin: '4999', time: '09:00', text: 'Sprint kick-off tomorrow at 10 AM. Review your project logs.' }
+      ],
+      'robotics': [
+        { id: 301, author: 'Atitya', role: 'superadmin', pin: '4999', time: '11:30', text: 'ESP32 serial node tested on /dev/ttyACM0. Ready for hardware integration.' },
+        { id: 302, author: 'Rakhul', role: 'user', pin: '1042', time: '12:05', text: 'Testing motor drivers and sensor packet rate.' }
+      ],
+      'open-source': [
+        { id: 401, author: 'Sarah (Lead)', role: 'admin', pin: '7001', time: '10:00', text: 'Registration circulars dispatched to 2nd-year batches.' }
+      ],
+      'hardware-bom': [
+        { id: 501, author: 'Atitya', role: 'superadmin', pin: '4999', time: '08:45', text: 'Added RPLiDAR and XT60 connector specs to the BOM list.' }
+      ]
+    };
+
+    let activeChannel = 'general';
+    let currentAuth = { pin: '4999', name: 'Atitya', role: 'superadmin' };
+
+    // Permission Logic Rules
+    function canEdit(msg) {
+      if (currentAuth.pin === '4999') return true; // Super Admin can edit anything
+      return msg.pin === currentAuth.pin;          // Users/Admins can edit their own
+    }
+
+    function canDelete(msg) {
+      if (currentAuth.pin === '4999') return true; // Super Admin can delete anything
+      if (currentAuth.role === 'admin' && msg.pin !== '4999') return true; // Admin can delete anything EXCEPT Super Admin's messages
+      return false; // Regular users cannot delete (they can only edit to clear it if they want)
+    }
+
+    function renderFeed() {
+      const container = document.getElementById('messagesContainer');
+      const messages = channelStore[activeChannel] || [];
+
+      // Note: role pills are intentionally omitted from the HTML string below to hide roles
+      container.innerHTML = messages.map(m => `
+        <article class="message-card">
+          <div class="msg-meta">
+            <span class="msg-author">${m.author}</span>
+            <span class="msg-time">${m.time}</span>
+            <div style="margin-left: auto; display: flex; gap: 8px;">
+              ${canEdit(m) ? `<button class="sim-btn" onclick="editMsg(${m.id})">Edit</button>` : ''}
+              ${canDelete(m) ? `<button class="sim-btn" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" onclick="deleteMsg(${m.id})">Del</button>` : ''}
+            </div>
+          </div>
+          <div class="msg-body">${m.text}</div>
+        </article>
+      `).join('');
+    }
+
+    function switchChannel(channelKey, title, desc) {
+      activeChannel = channelKey;
+      document.getElementById('channelTitle').textContent = title;
+      document.getElementById('channelDesc').textContent = desc;
+
+      // Update active nav style
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+
+      renderFeed();
+    }
+
+    function setRole(pin, name, role) {
+      currentAuth = { pin, name, role };
+      
+      document.getElementById('currentUserDisplay').textContent = name;
+      
+      // Hide the global identity role badge so members don't focus on hierarchy
+      document.getElementById('currentUserRole').style.display = 'none';
+
+      // Toggle Super Admin Card visibility
+      const superBox = document.getElementById('superAdminBox');
+      superBox.style.display = pin === '4999' ? 'block' : 'none';
+
+      // Update sim buttons for UI testing
+      document.querySelectorAll('.sim-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById(`btn${pin}`).classList.add('active');
+      
+      renderFeed(); // Re-render to update visible Edit/Del buttons based on new role
+    }
+
+    function handleSend() {
+      const input = document.getElementById('chatInput');
+      const text = input.value.trim();
+      if (!text) return;
+
+      const now = new Date();
+      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+      if (!channelStore[activeChannel]) channelStore[activeChannel] = [];
+
+      channelStore[activeChannel].push({
+        id: Date.now(), // Generate unique ID for edits/deletes
+        author: currentAuth.name,
+        role: currentAuth.role,
+        pin: currentAuth.pin,
+        time: timeStr,
+        text: text
+      });
+
+      input.value = '';
+      renderFeed();
+      
+      // Auto-scroll to bottom
+      const scrollArea = document.querySelector('.chat-scroll-area');
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+    }
+
+    function editMsg(id) {
+      const msg = channelStore[activeChannel].find(m => m.id === id);
+      if (msg) {
+        const newText = prompt("Edit your message:", msg.text);
+        if (newText !== null && newText.trim() !== '') {
+          msg.text = newText.trim();
+          renderFeed();
+        }
+      }
+    }
+
+    function deleteMsg(id) {
+      if (confirm("Are you sure you want to delete this message?")) {
+        channelStore[activeChannel] = channelStore[activeChannel].filter(m => m.id !== id);
+        renderFeed();
+      }
+    }
+
+    // Initialize layout and feed on load
+    setRole('4999', 'Atitya', 'superadmin');
+  </script>
+</body>
+</html>
