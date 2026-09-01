@@ -85,250 +85,126 @@ import '../styles/medium.css';
   </div>
 
   <script is:inline>
-    // Local DB Engine
-    let users = JSON.parse(localStorage.getItem('convo_users')) || {
-      '4999': { name: 'Atitya', role: 'superadmin' }
-    };
+  // Cloudflare Worker URL (Replace with your actual deployed Worker URL)
+  const WORKER_URL = 'https://convo-api.atityaramsureshmanickam.workers.dev';
 
-    let channels = JSON.parse(localStorage.getItem('convo_channels')) || {
-      'general': { title: '# general', desc: 'Common community thread', owner: '4999', isDefault: true },
-      'robotics': { title: '⚡ robotics-core', desc: 'Hardware, firmware & ROS 2 nodes', owner: '4999', isDefault: false },
-      'open-source': { title: '🌐 os-lab', desc: 'Open Source Lab coordination', owner: '4999', isDefault: false }
-    };
+  let currentPin = localStorage.getItem('convo_active_pin') || null;
+  let currentUser = JSON.parse(localStorage.getItem('convo_user') || 'null');
 
-    let messages = JSON.parse(localStorage.getItem('convo_messages')) || {
-      'general': [
-        { id: 1, author: 'Atitya', pin: '4999', time: '10:00', text: 'Welcome to Convo! All project chat history is preserved for everyone.' }
-      ],
-      'robotics': [
-        { id: 2, author: 'Atitya', pin: '4999', time: '10:05', text: 'ESP32 micro-ROS node initialized.' }
-      ],
-      'open-source': []
-    };
+  // --- 1. LEFT SHIFT + 4999 TRACKING ENGINE ---
+  let hiddenPin = '';
+  let isLeftShiftHeld = false;
+  let isValidSuperAdminAttempt = true;
 
-    let currentPin = localStorage.getItem('convo_active_pin') || null;
-    let activeChannel = 'general';
+  // Track the exact physical Left Shift key
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'ShiftLeft') isLeftShiftHeld = true;
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'ShiftLeft') isLeftShiftHeld = false;
+  });
 
-    function saveState() {
-      localStorage.setItem('convo_users', JSON.stringify(users));
-      localStorage.setItem('convo_channels', JSON.stringify(channels));
-      localStorage.setItem('convo_messages', JSON.stringify(messages));
+  const pinInput = document.getElementById('pinInput');
+  const nameInput = document.getElementById('nameInput');
+  const newUserNameBlock = document.getElementById('newUserNameBlock');
+  const btnLogin = document.getElementById('btnLogin');
+  const authOverlay = document.getElementById('authOverlay');
+
+  // Intercept keystrokes to bypass character mapping ($, (, etc.)
+  pinInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Backspace') {
+      hiddenPin = hiddenPin.slice(0, -1);
+      pinInput.value = '•'.repeat(hiddenPin.length);
+      isValidSuperAdminAttempt = true; // reset on backspace
+      return;
     }
 
-    // Auth Engine
-    const authOverlay = document.getElementById('authOverlay');
-    const pinInput = document.getElementById('pinInput');
-    const newUserNameBlock = document.getElementById('newUserNameBlock');
-    const nameInput = document.getElementById('nameInput');
-    const btnLogin = document.getElementById('btnLogin');
-
-    if (currentPin && users[currentPin]) {
-      authOverlay.style.display = 'none';
-      initApp();
-    }
-
-    btnLogin.addEventListener('click', () => {
-      const pin = pinInput.value.trim();
-      const name = nameInput.value.trim();
-
-      if (pin.length !== 4) return alert('Enter a 4-digit PIN');
-
-      if (!users[pin]) {
-        if (!name && newUserNameBlock.style.display === 'none') {
-          newUserNameBlock.style.display = 'block';
-          alert('New PIN detected! Choose a display name.');
-          return;
-        }
-        users[pin] = {
-          name: name || `User-${pin}`,
-          role: pin === '4999' ? 'superadmin' : 'user'
-        };
-      }
-
-      currentPin = pin;
-      localStorage.setItem('convo_active_pin', pin);
-      saveState();
-      authOverlay.style.display = 'none';
-      initApp();
-    });
-
-    function handleLogout() {
-      localStorage.removeItem('convo_active_pin');
-      location.reload();
-    }
-
-    function initApp() {
-      const user = users[currentPin];
-      document.getElementById('userDisplayName').textContent = user.name;
+    // Match physical number row (Digit0-9) or Numpad (Numpad0-9)
+    const match = e.code.match(/^(Digit|Numpad)(\d)$/);
+    if (match && hiddenPin.length < 4) {
+      e.preventDefault(); // Stop actual characters from typing
       
-      renderChannels();
-      renderFeed();
-      renderAdminDeck();
-    }
+      const digit = match[2];
+      hiddenPin += digit;
+      pinInput.value = '•'.repeat(hiddenPin.length);
 
-    // Channel Engine
-    function renderChannels() {
-      const list = document.getElementById('channelNavList');
-      list.innerHTML = Object.entries(channels).map(([key, ch]) => `
-        <div class="nav-item ${key === activeChannel ? 'active' : ''}" onclick="switchChannel('${key}')">
-          <span>${ch.title}</span>
-        </div>
-      `).join('');
-
-      const curr = channels[activeChannel];
-      document.getElementById('activeChannelHeading').textContent = curr.title;
-      document.getElementById('activeChannelDesc').textContent = curr.desc;
-
-      // Group Delete permission: Admin / SuperAdmin can delete non-default channels
-      const btnDelGroup = document.getElementById('btnDeleteGroup');
-      const user = users[currentPin];
-      if (!curr.isDefault && (user.role === 'superadmin' || user.role === 'admin')) {
-        btnDelGroup.style.display = 'block';
-      } else {
-        btnDelGroup.style.display = 'none';
+      // If they type ANY digit without holding Left Shift, they fail the Super Admin test
+      if (!isLeftShiftHeld) {
+        isValidSuperAdminAttempt = false;
       }
+    } else if (e.key !== 'Enter' && e.key !== 'Tab') {
+      e.preventDefault(); // Block letters and other symbols
     }
+  });
 
-    function switchChannel(key) {
-      activeChannel = key;
-      renderChannels();
-      renderFeed();
-    }
+  // --- 2. CLOUDFLARE AUTHENTICATION FLOW ---
+  btnLogin.addEventListener('click', async () => {
+    if (hiddenPin.length !== 4) return alert('Enter a 4-digit PIN');
+    
+    const name = nameInput.value.trim();
+    
+    // Determine if they successfully executed the secret Super Admin combo
+    const isSuperAdmin = (hiddenPin === '4999' && isValidSuperAdminAttempt);
 
-    function createCustomGroup() {
-      const name = prompt('Channel Name (e.g. # backend):');
-      if (!name) return;
-      const desc = prompt('Channel Description:') || 'Custom project discussion';
-      const key = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-
-      if (channels[key]) return alert('Channel exists');
-
-      channels[key] = {
-        title: name,
-        desc: desc,
-        owner: currentPin,
-        isDefault: false
-      };
-      messages[key] = [];
-      saveState();
-      switchChannel(key);
-    }
-
-    function deleteCurrentGroup() {
-      if (confirm(`Delete channel "${channels[activeChannel].title}"?`)) {
-        delete channels[activeChannel];
-        delete messages[activeChannel];
-        activeChannel = 'general';
-        saveState();
-        renderChannels();
-        renderFeed();
-      }
-    }
-
-    // Message Engine
-    function canEdit(msg) {
-      if (currentPin === '4999') return true;
-      return msg.pin === currentPin;
-    }
-
-    function canDelete(msg) {
-      if (currentPin === '4999') return true;
-      const user = users[currentPin];
-      if (user.role === 'admin' && msg.pin !== '4999') return true;
-      return false;
-    }
-
-    function renderFeed() {
-      const container = document.getElementById('messagesFeed');
-      const feed = messages[activeChannel] || [];
-
-      container.innerHTML = feed.map(m => `
-        <article class="message-card">
-          <div class="msg-meta">
-            <span class="msg-author">${m.author}</span>
-            <span class="msg-time">${m.time}</span>
-            <div class="msg-actions">
-              ${canEdit(m) ? `<button class="btn-ctrl" onclick="editMessage(${m.id})">Edit</button>` : ''}
-              ${canDelete(m) ? `<button class="btn-ctrl danger" onclick="deleteMessage(${m.id})">Del</button>` : ''}
-            </div>
-          </div>
-          <div class="msg-body">${m.text}</div>
-        </article>
-      `).join('');
-
-      const scrollArea = document.querySelector('.chat-scroll-area');
-      scrollArea.scrollTop = scrollArea.scrollHeight;
-    }
-
-    function handlePostMessage() {
-      const input = document.getElementById('msgInput');
-      const text = input.value.trim();
-      if (!text) return;
-
-      const now = new Date();
-      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-      if (!messages[activeChannel]) messages[activeChannel] = [];
-
-      messages[activeChannel].push({
-        id: Date.now(),
-        author: users[currentPin].name,
-        pin: currentPin,
-        time: timeStr,
-        text: text
+    try {
+      btnLogin.textContent = 'Verifying...';
+      const res = await fetch(`${WORKER_URL}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          pin: hiddenPin, 
+          name: name,
+          isSuperAdmin: isSuperAdmin 
+        })
       });
 
-      input.value = '';
-      saveState();
-      renderFeed();
-    }
+      const data = await res.json();
 
-    function editMessage(id) {
-      const msg = messages[activeChannel].find(m => m.id === id);
-      if (!msg) return;
-      const newText = prompt('Edit message:', msg.text);
-      if (newText) {
-        msg.text = newText;
-        saveState();
-        renderFeed();
-      }
-    }
-
-    function deleteMessage(id) {
-      messages[activeChannel] = messages[activeChannel].filter(m => m.id !== id);
-      saveState();
-      renderFeed();
-    }
-
-    // Super Admin Engine (PIN 4999)
-    function renderAdminDeck() {
-      const deck = document.getElementById('superAdminDeck');
-      if (currentPin !== '4999') {
-        deck.style.display = 'none';
+      // If PIN is new and no name was provided, reveal the name input
+      if (data.isNew && !name && newUserNameBlock.style.display === 'none') {
+        newUserNameBlock.style.display = 'block';
+        btnLogin.textContent = 'Complete Registration';
+        alert('New PIN detected! Choose a display name to create your profile.');
         return;
       }
+
+      // Success: Save session
+      currentPin = hiddenPin;
+      currentUser = data.user;
+      localStorage.setItem('convo_active_pin', currentPin);
+      localStorage.setItem('convo_user', JSON.stringify(currentUser));
+      
+      authOverlay.style.display = 'none';
+      initApp(); // Start your chat UI
+      
+    } catch (err) {
+      console.error(err);
+      alert('Failed to connect to authentication server.');
+      btnLogin.textContent = 'Enter Portal';
+    }
+  });
+
+  // --- 3. UI INITIALIZATION ---
+  if (currentPin && currentUser) {
+    authOverlay.style.display = 'none';
+    initApp();
+  }
+
+  function initApp() {
+    document.getElementById('userDisplayName').textContent = currentUser.name;
+    
+    // Show/Hide Super Admin Deck based on validated role from Cloudflare
+    const deck = document.getElementById('superAdminDeck');
+    if (currentUser.role === 'superadmin') {
       deck.style.display = 'block';
-
-      const userRows = document.getElementById('adminUserRows');
-      userRows.innerHTML = Object.entries(users).map(([pin, u]) => `
-        <div class="admin-user-row">
-          <span><strong>${u.name}</strong> (PIN: ${pin}) - [${u.role}]</span>
-          ${pin !== '4999' ? `
-            <div>
-              <button class="btn-ctrl" onclick="toggleRole('${pin}')">
-                Toggle to ${u.role === 'admin' ? 'User' : 'Admin'}
-              </button>
-            </div>
-          ` : '<em>Super Admin Master</em>'}
-        </div>
-      `).join('');
+    } else {
+      deck.style.display = 'none';
     }
 
-    function toggleRole(pin) {
-      users[pin].role = users[pin].role === 'admin' ? 'user' : 'admin';
-      saveState();
-      renderAdminDeck();
-    }
-  </script>
+    // Call functions to fetch channels and messages from Cloudflare here
+    // loadChannels();
+    // loadMessages();
+  }
+</script>
 </body>
 </html>
