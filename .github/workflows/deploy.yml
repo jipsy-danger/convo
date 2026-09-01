@@ -3,6 +3,10 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [ main ]
+    # Ignore data commits created by the Cloudflare Worker
+    paths-ignore:
+      - 'data/**'
+      - 'README.md'
   workflow_dispatch:
 
 permissions:
