@@ -395,7 +395,6 @@ body {
 html { background: #02050a; }
 
 body {
-  perspective: 1800px;
   background-color: #02050a;
   background-image:
     radial-gradient(circle at 50% 8%, rgba(56,189,248,.10), transparent 30%),
