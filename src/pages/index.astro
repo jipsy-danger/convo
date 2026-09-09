@@ -573,6 +573,7 @@ import '../styles/medium.css';
     const article = event.target.closest('#messagesFeed .message-card');
     const deleteButton = article?.querySelector('.message-delete');
     if (!article || !deleteButton) {
+      event.preventDefault();
       closeMessageContextMenu();
       return;
     }
