@@ -1,0 +1,330 @@
+name: Apply 3D HUD patch
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: startsWith(github.event.head_commit.message, 'Install temporary 3D HUD patch')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Apply 3D HUD layer
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/styles/medium.css')
+          css = path.read_text(encoding='utf-8')
+          marker = '/* CONVO 3D HUD LAYER */'
+
+          if marker not in css:
+              css += r'''
+
+          /* CONVO 3D HUD LAYER */
+          html { background: #02050a; }
+
+          body {
+            perspective: 1800px;
+            background-color: #02050a;
+            background-image:
+              radial-gradient(circle at 50% 8%, rgba(56,189,248,.10), transparent 30%),
+              radial-gradient(circle at 12% 88%, rgba(37,99,235,.12), transparent 34%),
+              radial-gradient(circle at 90% 18%, rgba(14,165,233,.08), transparent 30%),
+              linear-gradient(rgba(56,189,248,.025) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(56,189,248,.025) 1px, transparent 1px);
+            background-size: auto, auto, auto, 48px 48px, 48px 48px;
+          }
+
+          .app-layout {
+            position: relative;
+            isolation: isolate;
+            perspective: 1500px;
+            transform-style: preserve-3d;
+            background:
+              linear-gradient(90deg, rgba(56,189,248,.035), transparent 12%, transparent 88%, rgba(56,189,248,.035));
+          }
+
+          .app-layout::before {
+            content: '';
+            position: absolute;
+            inset: 12px;
+            pointer-events: none;
+            z-index: 10;
+            border: 1px solid rgba(56,189,248,.07);
+            box-shadow: inset 0 0 80px rgba(0,0,0,.42), 0 0 50px rgba(56,189,248,.025);
+            transform: translateZ(30px);
+          }
+
+          .sidebar {
+            position: relative;
+            z-index: 2;
+            overflow: hidden;
+            transform: translateZ(22px);
+            transform-style: preserve-3d;
+            background:
+              linear-gradient(145deg, rgba(15,27,43,.94), rgba(4,10,18,.98) 68%),
+              linear-gradient(90deg, rgba(56,189,248,.06), transparent);
+            border-right: 1px solid rgba(56,189,248,.18);
+            box-shadow:
+              18px 0 45px rgba(0,0,0,.45),
+              inset -1px 0 rgba(125,211,252,.12),
+              inset 0 0 34px rgba(37,99,235,.05);
+          }
+
+          .sidebar::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            opacity: .38;
+            background:
+              linear-gradient(rgba(56,189,248,.045) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(56,189,248,.045) 1px, transparent 1px);
+            background-size: 32px 32px;
+            mask-image: linear-gradient(to bottom, black, transparent 92%);
+          }
+
+          .sidebar::after {
+            content: '';
+            position: absolute;
+            top: 12%;
+            right: -1px;
+            width: 1px;
+            height: 68%;
+            background: linear-gradient(transparent, rgba(56,189,248,.6), transparent);
+            box-shadow: 0 0 18px rgba(56,189,248,.32);
+            pointer-events: none;
+          }
+
+          .brand-section,
+          .nav-groups {
+            position: relative;
+            z-index: 1;
+            transform: translateZ(18px);
+          }
+
+          .brand-section {
+            border-bottom-color: rgba(56,189,248,.14);
+          }
+
+          .brand-logo {
+            transform: perspective(260px) rotateY(-12deg) translateZ(8px);
+            border: 1px solid rgba(191,239,255,.24);
+            box-shadow:
+              0 7px 18px rgba(0,0,0,.42),
+              0 0 20px rgba(56,189,248,.22),
+              inset 0 1px rgba(255,255,255,.28);
+          }
+
+          .nav-groups { transform: translateZ(12px); }
+
+          .channel-list > * {
+            transform: translateZ(10px);
+            transition: transform .18s ease, filter .18s ease;
+          }
+
+          .channel-list > *:hover {
+            transform: translate3d(6px, -2px, 24px);
+            filter: drop-shadow(0 5px 10px rgba(0,0,0,.45));
+          }
+
+          .main-stage {
+            position: relative;
+            min-width: 0;
+            overflow: hidden;
+            transform: translateZ(8px);
+            transform-style: preserve-3d;
+            background:
+              radial-gradient(circle at 70% 12%, rgba(56,189,248,.055), transparent 28%),
+              linear-gradient(145deg, rgba(7,14,24,.96), rgba(2,6,12,.98));
+            box-shadow: inset 0 0 100px rgba(0,0,0,.35);
+          }
+
+          .main-stage::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            opacity: .30;
+            background:
+              linear-gradient(rgba(56,189,248,.032) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(56,189,248,.032) 1px, transparent 1px);
+            background-size: 44px 44px;
+            mask-image: radial-gradient(ellipse at 50% 40%, black 0 52%, transparent 90%);
+          }
+
+          .main-stage::after {
+            content: '';
+            position: absolute;
+            left: 18%;
+            right: 8%;
+            top: 18%;
+            height: 1px;
+            pointer-events: none;
+            background: linear-gradient(90deg, transparent, rgba(56,189,248,.18), transparent);
+            box-shadow: 0 0 30px rgba(56,189,248,.08);
+            animation: hud-scanline 7s ease-in-out infinite;
+          }
+
+          .channel-header {
+            position: relative;
+            z-index: 3;
+            transform: translate3d(0,0,34px);
+            transform-style: preserve-3d;
+            background:
+              linear-gradient(180deg, rgba(15,29,45,.88), rgba(5,12,21,.78)),
+              linear-gradient(90deg, rgba(56,189,248,.06), transparent 45%);
+            border-bottom: 1px solid rgba(56,189,248,.16);
+            box-shadow:
+              0 12px 28px rgba(0,0,0,.28),
+              inset 0 -1px rgba(125,211,252,.08),
+              inset 0 1px rgba(255,255,255,.035);
+            backdrop-filter: blur(18px) saturate(135%);
+          }
+
+          .channel-info,
+          .header-actions {
+            transform: translateZ(12px);
+          }
+
+          .chat-scroll-area {
+            position: relative;
+            z-index: 1;
+            perspective: 1200px;
+            transform-style: preserve-3d;
+            background: transparent;
+          }
+
+          #messagesFeed > * {
+            position: relative;
+            transform: translate3d(0,0,10px) rotateX(.35deg);
+            transform-style: preserve-3d;
+            transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
+            filter: drop-shadow(0 7px 13px rgba(0,0,0,.22));
+          }
+
+          #messagesFeed > *:hover {
+            transform: translate3d(0,-3px,28px) rotateX(0deg);
+            filter: drop-shadow(0 14px 22px rgba(0,0,0,.36));
+          }
+
+          .super-admin-deck {
+            position: relative;
+            z-index: 3;
+            transform: translate3d(0,0,30px);
+            transform-style: preserve-3d;
+            background: linear-gradient(145deg, rgba(12,25,39,.94), rgba(3,9,16,.96));
+            border: 1px solid rgba(56,189,248,.2);
+            box-shadow:
+              0 18px 35px rgba(0,0,0,.35),
+              inset 0 1px rgba(255,255,255,.06),
+              inset 0 0 28px rgba(37,99,235,.06);
+            backdrop-filter: blur(16px);
+          }
+
+          .input-dock {
+            position: relative;
+            z-index: 4;
+            transform: translate3d(0,0,42px);
+            transform-style: preserve-3d;
+            background: linear-gradient(180deg, rgba(7,16,27,.72), rgba(3,8,14,.96));
+            border-top: 1px solid rgba(56,189,248,.18);
+            box-shadow:
+              0 -14px 34px rgba(0,0,0,.32),
+              inset 0 1px rgba(125,211,252,.07);
+            backdrop-filter: blur(20px) saturate(130%);
+          }
+
+          .input-container {
+            transform: perspective(700px) rotateX(1.5deg) translateZ(8px);
+            transform-style: preserve-3d;
+          }
+
+          .chat-input {
+            background: linear-gradient(145deg, rgba(14,28,43,.9), rgba(3,10,18,.94));
+            border-color: rgba(56,189,248,.16);
+            box-shadow: inset 0 2px 12px rgba(0,0,0,.34), 0 8px 18px rgba(0,0,0,.18);
+          }
+
+          .chat-input:focus {
+            transform: translateZ(5px);
+            border-color: rgba(56,189,248,.5);
+            box-shadow: inset 0 2px 12px rgba(0,0,0,.34), 0 0 24px rgba(56,189,248,.10);
+          }
+
+          .btn-send,
+          .btn-ctrl,
+          .btn-add-group,
+          .logout-link {
+            transform: translateZ(10px);
+            transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+          }
+
+          .btn-send:hover,
+          .btn-ctrl:hover,
+          .btn-add-group:hover,
+          .logout-link:hover {
+            transform: translate3d(0,-2px,22px);
+            box-shadow: 0 8px 18px rgba(0,0,0,.3), 0 0 14px rgba(56,189,248,.08);
+          }
+
+          .auth-card {
+            transform: perspective(1200px) rotateX(1deg) translateZ(18px);
+            transform-style: preserve-3d;
+          }
+
+          .hud-brand,
+          .hud-status,
+          .hud-progress,
+          .hud-hint,
+          .hud-enter,
+          .new-user-block {
+            transform: translateZ(28px);
+          }
+
+          .access-core {
+            transform: perspective(850px) rotateX(12deg) rotateY(-2deg) translateZ(45px);
+            transform-style: preserve-3d;
+            filter: drop-shadow(0 24px 28px rgba(0,0,0,.48)) drop-shadow(0 0 18px rgba(56,189,248,.18));
+          }
+
+          .access-core:hover {
+            transform: perspective(850px) rotateX(12deg) rotateY(-2deg) translate3d(0,-4px,62px) scale(1.015);
+            filter: drop-shadow(0 30px 36px rgba(0,0,0,.5)) drop-shadow(0 0 28px rgba(56,189,248,.28));
+          }
+
+          .auth-card::after {
+            transform: translateZ(-8px) rotateX(72deg) scaleY(.48);
+            box-shadow: 0 0 90px rgba(37,99,235,.10), inset 0 0 50px rgba(56,189,248,.04);
+          }
+
+          @keyframes hud-scanline {
+            0%, 100% { transform: translateY(-10px); opacity: 0; }
+            20% { opacity: .25; }
+            50% { transform: translateY(52vh); opacity: .08; }
+            80% { opacity: .18; }
+          }
+
+          @media (prefers-reduced-motion: reduce) {
+            .main-stage::after { animation: none; }
+            #messagesFeed > *, .channel-list > *, .btn-send, .btn-ctrl, .btn-add-group, .logout-link { transition: none; }
+          }
+          '''
+              path.write_text(css, encoding='utf-8')
+          PY
+
+      - name: Commit 3D HUD and remove temporary workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/styles/medium.css
+          git rm .github/workflows/patch-3d-hud.yml
+          git commit -m 'Upgrade interface to 3D HUD'
+          git push
