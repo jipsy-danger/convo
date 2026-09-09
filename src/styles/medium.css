@@ -321,10 +321,10 @@ body {
 
 .auth-overlay.super-mode .orbit-one { border-color: rgba(125,211,252,.65); border-right-color: transparent; }
 .auth-overlay.super-mode .core-center { box-shadow: 0 0 14px #38bdf8, 0 0 48px rgba(56,189,248,.85), inset 0 0 24px rgba(255,255,255,.4); }
-.auth-overlay.checking .access-core { animation: core-lock 1s ease-in-out infinite; }
+.auth-overlay.checking .access-core { animation: none; }
 .auth-overlay.granted .core-center { animation: reactor-granted .36s ease-out forwards; }
 .auth-overlay.granted .access-core { filter: drop-shadow(0 0 45px rgba(56,189,248,.65)); }
-.auth-overlay.denied .access-core { animation: core-denied .28s linear 2; }
+.auth-overlay.denied .access-core { animation: none; }
 .auth-overlay.denied .core-center { box-shadow: 0 0 14px rgba(239,68,68,.8), 0 0 42px rgba(239,68,68,.45); }
 
 @keyframes hud-spin { to { transform: rotate(360deg); } }
@@ -642,14 +642,15 @@ body {
 
 
 .access-core {
-  transform: perspective(850px) rotateX(12deg) rotateY(-2deg) translateZ(45px);
-  transform-style: preserve-3d;
-  filter: drop-shadow(0 24px 28px rgba(0,0,0,.48)) drop-shadow(0 0 18px rgba(56,189,248,.18));
+  transform: none;
+  transform-style: flat;
+  filter: none;
 }
 
-.access-core:hover {
-  transform: perspective(850px) rotateX(12deg) rotateY(-2deg) translate3d(0,-4px,62px) scale(1.015);
-  filter: drop-shadow(0 30px 36px rgba(0,0,0,.5)) drop-shadow(0 0 28px rgba(56,189,248,.28));
+.access-core:hover,
+.access-core:focus-visible {
+  transform: none;
+  filter: none;
 }
 
 .auth-card::after {
