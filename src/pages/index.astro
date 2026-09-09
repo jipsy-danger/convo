@@ -12,18 +12,20 @@ import '../styles/medium.css';
 <body>
   <!-- PIN Authentication Modal -->
   <div id="authOverlay" class="auth-overlay">
-    <div class="auth-card">
-      <h2>Convo</h2>
-      <p style="color: var(--text-muted); font-size: 0.85rem;">Enter your 4-digit PIN to join the lounge</p>
-      
-      <input type="password" id="pinInput" class="pin-field" maxlength="4" placeholder="••••" autocomplete="off" />
-      
-      <div id="newUserNameBlock" style="display: none;">
-        <input type="text" id="nameInput" class="name-field" placeholder="Choose your display name" />
+    <form id="authForm" class="auth-card">
+      <div class="auth-heading">
+        <h2>Convo</h2>
+        <p>Enter your 4-digit PIN to join the lounge</p>
       </div>
-      
-      <button id="btnLogin" class="btn-primary">Enter Portal</button>
-    </div>
+
+      <input type="password" id="pinInput" class="pin-field" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="••••" autocomplete="off" aria-label="4-digit PIN" />
+
+      <div id="newUserNameBlock" class="new-user-block" style="display: none;">
+        <input type="text" id="nameInput" class="name-field" placeholder="Choose your display name" autocomplete="off" />
+      </div>
+
+      <button id="btnLogin" class="btn-primary" type="submit">Enter Portal</button>
+    </form>
   </div>
 
   <!-- Main App Shell -->
@@ -94,6 +96,7 @@ import '../styles/medium.css';
     if (e.code === 'ShiftLeft') isLeftShiftHeld = false;
   });
 
+  const authForm = document.getElementById('authForm');
   const pinInput = document.getElementById('pinInput');
   const nameInput = document.getElementById('nameInput');
   const newUserNameBlock = document.getElementById('newUserNameBlock');
@@ -105,7 +108,6 @@ import '../styles/medium.css';
   btnLogout.addEventListener('click', handleLogout);
 
   function handleLogout() {
-    // Clear every Convo session value so a refresh cannot restore the old portal session.
     localStorage.removeItem('convo_active_pin');
     localStorage.removeItem('convo_user');
     sessionStorage.removeItem('convo_active_pin');
@@ -117,11 +119,11 @@ import '../styles/medium.css';
     isValidSuperAdminAttempt = true;
     isLeftShiftHeld = false;
 
-    // Reset the login UI for the next user.
     pinInput.value = '';
     nameInput.value = '';
     newUserNameBlock.style.display = 'none';
     btnLogin.textContent = 'Enter Portal';
+    btnLogin.disabled = false;
     authOverlay.style.display = 'flex';
 
     const feed = document.getElementById('messagesFeed');
@@ -139,6 +141,7 @@ import '../styles/medium.css';
 
   pinInput.addEventListener('keydown', (e) => {
     if (e.key === 'Backspace') {
+      e.preventDefault();
       hiddenPin = hiddenPin.slice(0, -1);
       pinInput.value = '•'.repeat(hiddenPin.length);
       isValidSuperAdminAttempt = true;
@@ -152,13 +155,25 @@ import '../styles/medium.css';
       hiddenPin += digit;
       pinInput.value = '•'.repeat(hiddenPin.length);
       if (!isLeftShiftHeld) isValidSuperAdminAttempt = false;
-    } else if (e.key !== 'Enter' && e.key !== 'Tab') {
-      e.preventDefault();
+      return;
     }
+
+    // Let Enter reach the auth form so keyboard login works without a mouse.
+    if (e.key !== 'Enter' && e.key !== 'Tab') e.preventDefault();
+  });
+
+  // The authentication form owns submission. Enter now behaves exactly like clicking Enter Portal.
+  authForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    login();
   });
 
   async function login() {
-    if (hiddenPin.length !== 4) return alert('Enter a 4-digit PIN');
+    if (hiddenPin.length !== 4) {
+      alert('Enter a 4-digit PIN');
+      pinInput.focus();
+      return;
+    }
 
     const name = nameInput.value.trim();
     const isSuperAdmin = hiddenPin === '4999' && isValidSuperAdminAttempt;
@@ -201,19 +216,12 @@ import '../styles/medium.css';
     }
   }
 
-  btnLogin.addEventListener('click', login);
-  pinInput.addEventListener('keyup', (e) => {
-    if (e.key === 'Enter' && hiddenPin.length === 4) login();
-  });
-  nameInput.addEventListener('keyup', (e) => {
-    if (e.key === 'Enter') login();
-  });
-
   if (currentPin && currentUser) {
     authOverlay.style.display = 'none';
     initApp();
   } else {
     authOverlay.style.display = 'flex';
+    requestAnimationFrame(() => pinInput.focus());
   }
 
   function initApp() {
