@@ -638,19 +638,8 @@ body {
   box-shadow: 0 8px 18px rgba(0,0,0,.3), 0 0 14px rgba(56,189,248,.08);
 }
 
-.auth-card {
-  transform: perspective(1200px) rotateX(1deg) translateZ(18px);
-  transform-style: preserve-3d;
-}
+/* Keep the login HUD text in a crisp 2D compositor layer. */
 
-.hud-brand,
-.hud-status,
-.hud-progress,
-.hud-hint,
-.hud-enter,
-.new-user-block {
-  transform: translateZ(28px);
-}
 
 .access-core {
   transform: perspective(850px) rotateX(12deg) rotateY(-2deg) translateZ(45px);
@@ -664,7 +653,6 @@ body {
 }
 
 .auth-card::after {
-  transform: translateZ(-8px) rotateX(72deg) scaleY(.48);
   box-shadow: 0 0 90px rgba(37,99,235,.10), inset 0 0 50px rgba(56,189,248,.04);
 }
 
