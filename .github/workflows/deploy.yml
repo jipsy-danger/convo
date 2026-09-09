@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -21,19 +21,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Apply one-time message context menu patch
-        if: startsWith(github.event.head_commit.message, 'Prepare one-time message menu patch')
-        run: |
-          python -c "import base64;from pathlib import Path;p=Path('src/pages/index.astro');t=p.read_text(encoding='utf-8');j=base64.b64decode('CiAgLy8gTUVTU0FHRSBDT05URVhUIE1FTlUgUEFUQ0gKICBjb25zdCBtZXNzYWdlQ29udGV4dE1lbnUgPSBkb2N1bWVudC5jcmVhdGVFbGVtZW50KCdkaXYnKTsKICBtZXNzYWdlQ29udGV4dE1lbnUuY2xhc3NOYW1lID0gJ21lc3NhZ2UtY29udGV4dC1tZW51JzsKICBtZXNzYWdlQ29udGV4dE1lbnUuaGlkZGVuID0gdHJ1ZTsKICBtZXNzYWdlQ29udGV4dE1lbnUuaW5uZXJIVE1MID0gJzxidXR0b24gdHlwZT0iYnV0dG9uIiBjbGFzcz0ibWVzc2FnZS1jb250ZXh0LWRlbGV0ZSI+RGVsZXRlPC9idXR0b24+JzsKICBkb2N1bWVudC5ib2R5LmFwcGVuZENoaWxkKG1lc3NhZ2VDb250ZXh0TWVudSk7CgogIGxldCBjb250ZXh0RGVsZXRlSWQgPSBudWxsOwoKICBmdW5jdGlvbiBjbG9zZU1lc3NhZ2VDb250ZXh0TWVudSgpIHsKICAgIG1lc3NhZ2VDb250ZXh0TWVudS5oaWRkZW4gPSB0cnVlOwogICAgY29udGV4dERlbGV0ZUlkID0gbnVsbDsKICB9CgogIGRvY3VtZW50LmFkZEV2ZW50TGlzdGVuZXIoJ2NvbnRleHRtZW51JywgKGV2ZW50KSA9PiB7CiAgICBjb25zdCBhcnRpY2xlID0gZXZlbnQudGFyZ2V0LmNsb3Nlc3QoJyNtZXNzYWdlc0ZlZWQgLm1lc3NhZ2UtY2FyZCcpOwogICAgY29uc3QgZGVsZXRlQnV0dG9uID0gYXJ0aWNsZT8ucXVlcnlTZWxlY3RvcignLm1lc3NhZ2UtZGVsZXRlJyk7CiAgICBpZiAoIWFydGljbGUgfHwgIWRlbGV0ZUJ1dHRvbikgewogICAgICBjbG9zZU1lc3NhZ2VDb250ZXh0TWVudSgpOwogICAgICByZXR1cm47CiAgICB9CgogICAgZXZlbnQucHJldmVudERlZmF1bHQoKTsKICAgIGNvbnRleHREZWxldGVJZCA9IGRlbGV0ZUJ1dHRvbi5kYXRhc2V0Lm1lc3NhZ2VJZDsKICAgIG1lc3NhZ2VDb250ZXh0TWVudS5oaWRkZW4gPSBmYWxzZTsKCiAgICBjb25zdCBtZW51V2lkdGggPSAxMjA7CiAgICBjb25zdCBtZW51SGVpZ2h0ID0gNDI7CiAgICBjb25zdCBsZWZ0ID0gTWF0aC5taW4oZXZlbnQuY2xpZW50WCwgd2luZG93LmlubmVyV2lkdGggLSBtZW51V2lkdGggLSA4KTsKICAgIGNvbnN0IHRvcCA9IE1hdGgubWluKGV2ZW50LmNsaWVudFksIHdpbmRvdy5pbm5lckhlaWdodCAtIG1lbnVIZWlnaHQgLSA4KTsKICAgIG1lc3NhZ2VDb250ZXh0TWVudS5zdHlsZS5sZWZ0ID0gYCR7TWF0aC5tYXgoOCwgbGVmdCl9cHhgOwogICAgbWVzc2FnZUNvbnRleHRNZW51LnN0eWxlLnRvcCA9IGAke01hdGgubWF4KDgsIHRvcCl9cHhgOwogIH0pOwoKICBtZXNzYWdlQ29udGV4dE1lbnUucXVlcnlTZWxlY3RvcignLm1lc3NhZ2UtY29udGV4dC1kZWxldGUnKS5hZGRFdmVudExpc3RlbmVyKCdjbGljaycsICgpID0+IHsKICAgIGlmIChjb250ZXh0RGVsZXRlSWQgIT09IG51bGwpIGRlbGV0ZU1lc3NhZ2UoY29udGV4dERlbGV0ZUlkKTsKICAgIGNsb3NlTWVzc2FnZUNvbnRleHRNZW51KCk7CiAgfSk7CgogIGRvY3VtZW50LmFkZEV2ZW50TGlzdGVuZXIoJ2NsaWNrJywgKGV2ZW50KSA9PiB7CiAgICBpZiAoIW1lc3NhZ2VDb250ZXh0TWVudS5jb250YWlucyhldmVudC50YXJnZXQpKSBjbG9zZU1lc3NhZ2VDb250ZXh0TWVudSgpOwogIH0pOwoKICBkb2N1bWVudC5hZGRFdmVudExpc3RlbmVyKCdrZXlkb3duJywgKGV2ZW50KSA9PiB7CiAgICBpZiAoZXZlbnQua2V5ID09PSAnRXNjYXBlJykgY2xvc2VNZXNzYWdlQ29udGV4dE1lbnUoKTsKICB9KTsKCiAgd2luZG93LmFkZEV2ZW50TGlzdGVuZXIoJ3Njcm9sbCcsIGNsb3NlTWVzc2FnZUNvbnRleHRNZW51LCB0cnVlKTsKICB3aW5kb3cuYWRkRXZlbnRMaXN0ZW5lcigncmVzaXplJywgY2xvc2VNZXNzYWdlQ29udGV4dE1lbnUpOwo='.encode()).decode();a='  window.handlePostMessage = async function handlePostMessage() {';t=t if '  // MESSAGE CONTEXT MENU PATCH' in t else t.replace(a,j+'\\n'+a,1);p.write_text(t,encoding='utf-8');c=Path('src/styles/medium.css');s=c.read_text(encoding='utf-8');q=base64.b64decode('Ci8qIENPTlZPIE1FU1NBR0UgQ09OVEVYVCBNRU5VICovCi5tZXNzYWdlLWRlbGV0ZSB7IGRpc3BsYXk6IG5vbmUgIWltcG9ydGFudDsgfQoKLm1lc3NhZ2UtY29udGV4dC1tZW51IHsKICBwb3NpdGlvbjogZml4ZWQ7CiAgei1pbmRleDogMjAwMDsKICBtaW4td2lkdGg6IDEyMHB4OwogIHBhZGRpbmc6IDVweDsKICBib3JkZXI6IDFweCBzb2xpZCByZ2JhKDU2LDE4OSwyNDgsLjI4KTsKICBib3JkZXItcmFkaXVzOiA1cHg7CiAgYmFja2dyb3VuZDogbGluZWFyLWdyYWRpZW50KDE0NWRlZywgcmdiYSgxMSwyNCwzOCwuOTgpLCByZ2JhKDIsOCwxNSwuOTgpKTsKICBib3gtc2hhZG93OiAwIDE0cHggMzJweCByZ2JhKDAsMCwwLC41MiksIDAgMCAxOHB4IHJnYmEoNTYsMTg5LDI0OCwuMTApLCBpbnNldCAwIDFweCByZ2JhKDI1NSwyNTUsMjU1LC4wNSk7CiAgYmFja2Ryb3AtZmlsdGVyOiBibHVyKDE2cHgpOwp9CgoubWVzc2FnZS1jb250ZXh0LW1lbnVbaGlkZGVuXSB7IGRpc3BsYXk6IG5vbmU7IH0KCi5tZXNzYWdlLWNvbnRleHQtZGVsZXRlIHsKICB3aWR0aDogMTAwJTsKICBtaW4taGVpZ2h0OiAzMnB4OwogIHBhZGRpbmc6IDZweCAxMHB4OwogIGJvcmRlcjogMDsKICBib3JkZXItcmFkaXVzOiAzcHg7CiAgYmFja2dyb3VuZDogdHJhbnNwYXJlbnQ7CiAgY29sb3I6ICNmZGE0YWY7CiAgZm9udC1mYW1pbHk6IHZhcigtLWZvbnQtbW9ubyk7CiAgZm9udC1zaXplOiAuNjJyZW07CiAgbGV0dGVyLXNwYWNpbmc6IC4wOGVtOwogIHRleHQtYWxpZ246IGxlZnQ7CiAgY3Vyc29yOiBwb2ludGVyOwp9CgoubWVzc2FnZS1jb250ZXh0LWRlbGV0ZTpob3ZlciB7CiAgYmFja2dyb3VuZDogcmdiYSgyMzksNjgsNjgsLjEwKTsKICBjb2xvcjogI2ZlY2FjYTsKfQo='.encode()).decode();s=s if '/* CONVO MESSAGE CONTEXT MENU */' in s else s+q;c.write_text(s,encoding='utf-8')"
-
-      - name: Commit one-time patch
-        if: startsWith(github.event.head_commit.message, 'Prepare one-time message menu patch')
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/pages/index.astro src/styles/medium.css
-          git commit -m 'Show message actions on right click'
-          git push
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Install dependencies
         run: npm ci
