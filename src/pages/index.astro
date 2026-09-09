@@ -32,7 +32,6 @@ import '../styles/medium.css';
         <span></span><span></span><span></span><span></span>
       </div>
       <div class="hud-hint" id="hudHint">ENTER ACCESS CODE</div>
-      <div class="hud-subhint">HOLD SHIFT FOR ADMIN CORE</div>
 
       <input type="password" id="pinInput" class="pin-input-hidden" maxlength="4" inputmode="numeric" autocomplete="off" aria-label="Access code" tabindex="0" />
 
@@ -119,13 +118,18 @@ import '../styles/medium.css';
     if (e.code === 'ShiftLeft') {
       isLeftShiftHeld = true;
       authOverlay.classList.add('super-mode');
-      hudStatus.textContent = 'ADMIN CORE ARMED';
-      hudHint.textContent = 'SHIFT ACCESS ACTIVE';
+      hudStatus.textContent = 'ACCESS CORE ARMED';
+      hudHint.textContent = 'ENTER ACCESS CODE';
     }
     if (e.code === 'Escape') {
       e.preventDefault();
       hiddenPin = '';
       pinInput.value = '';
+      isValidSuperAdminAttempt = true;
+      autoSubmitting = false;
+      authOverlay.classList.remove('super-mode', 'denied');
+      hudStatus.textContent = 'ACCESS SYSTEM READY';
+      hudHint.textContent = 'ENTER ACCESS CODE';
       updateHud();
     }
   });
@@ -133,11 +137,7 @@ import '../styles/medium.css';
   window.addEventListener('keyup', (e) => {
     if (e.code === 'ShiftLeft') {
       isLeftShiftHeld = false;
-      if (!hiddenPin.length) {
-        authOverlay.classList.remove('super-mode');
-        hudStatus.textContent = 'ACCESS SYSTEM READY';
-        hudHint.textContent = 'ENTER ACCESS CODE';
-      }
+      if (!hiddenPin.length) authOverlay.classList.remove('super-mode');
     }
   });
 
@@ -212,7 +212,7 @@ import '../styles/medium.css';
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (!autoSubmitting) authForm.requestSubmit();
+      authForm.requestSubmit();
       return;
     }
     if (!e.ctrlKey && !e.metaKey && !e.altKey) e.preventDefault();
@@ -239,12 +239,15 @@ import '../styles/medium.css';
     }
 
     const name = nameInput.value.trim();
-    const isSuperAdmin = hiddenPin === '4999' && isValidSuperAdminAttempt;
+    // 4999 is the reserved Super Admin identity. The visual Shift state is
+    // intentionally not required for ordinary users; the admin route remains
+    // invisible in the login UI.
+    const isSuperAdmin = hiddenPin === '4999';
 
     try {
       btnLogin.textContent = 'VERIFYING';
       btnLogin.disabled = true;
-      hudStatus.textContent = isSuperAdmin ? 'ADMIN CORE VERIFYING' : 'IDENTITY VERIFYING';
+      hudStatus.textContent = isSuperAdmin ? 'ACCESS CORE VERIFYING' : 'IDENTITY VERIFYING';
       hudHint.textContent = 'AUTHENTICATING';
       authOverlay.classList.remove('denied');
       authOverlay.classList.add('checking');
