@@ -95,10 +95,13 @@ import '../styles/medium.css';
   const WORKER_URL = 'https://convo-api.atityaramsureshmanickam.workers.dev';
   let currentPin = localStorage.getItem('convo_active_pin') || null;
   let currentUser = JSON.parse(localStorage.getItem('convo_user') || 'null');
+  let currentChannels = [];
+  let activeChannel = null;
   let hiddenPin = '';
   let isLeftShiftHeld = false;
   let isValidSuperAdminAttempt = true;
   let autoSubmitting = false;
+  let appLoading = false;
 
   const authForm = document.getElementById('authForm');
   const pinInput = document.getElementById('pinInput');
@@ -112,7 +115,43 @@ import '../styles/medium.css';
   const hudHint = document.getElementById('hudHint');
   const progressSegments = [...document.querySelectorAll('.hud-progress span')];
 
+  const $ = (id) => document.getElementById(id);
+  const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[char]));
+  const formatTime = (value) => {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '' : date.toLocaleString([], {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+  };
+
   function focusAccess() { pinInput.focus({ preventScroll: true }); }
+
+  async function api(path, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (options.body !== undefined && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+    if (currentPin) headers['X-Convo-Pin'] = currentPin;
+
+    const response = await fetch(`${WORKER_URL}${path}`, {
+      ...options,
+      headers,
+      cache: 'no-store'
+    });
+
+    const text = await response.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text }; }
+
+    if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+    return data;
+  }
+
+  function showAppError(message) {
+    console.error(message);
+    hudStatus.textContent = 'CONNECTION ERROR';
+    hudHint.textContent = 'CHECK WORKER ACCESS';
+  }
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'ShiftLeft') {
@@ -155,6 +194,8 @@ import '../styles/medium.css';
     sessionStorage.removeItem('convo_user');
     currentPin = null;
     currentUser = null;
+    currentChannels = [];
+    activeChannel = null;
     hiddenPin = '';
     isValidSuperAdminAttempt = true;
     isLeftShiftHeld = false;
@@ -169,14 +210,11 @@ import '../styles/medium.css';
     authOverlay.classList.remove('super-mode', 'granted', 'denied', 'checking');
     authOverlay.style.display = 'flex';
     updateHud();
-    const feed = document.getElementById('messagesFeed');
-    const channels = document.getElementById('channelNavList');
-    const deck = document.getElementById('superAdminDeck');
-    const userName = document.getElementById('userDisplayName');
-    if (feed) feed.replaceChildren();
-    if (channels) channels.replaceChildren();
-    if (deck) deck.style.display = 'none';
-    if (userName) userName.textContent = '';
+    $('messagesFeed')?.replaceChildren();
+    $('channelNavList')?.replaceChildren();
+    $('superAdminDeck').style.display = 'none';
+    $('userDisplayName').textContent = '';
+    $('btnDeleteGroup').style.display = 'none';
     requestAnimationFrame(focusAccess);
   }
 
@@ -239,9 +277,6 @@ import '../styles/medium.css';
     }
 
     const name = nameInput.value.trim();
-    // 4999 is the reserved Super Admin identity. The visual Shift state is
-    // intentionally not required for ordinary users; the admin route remains
-    // invisible in the login UI.
     const isSuperAdmin = hiddenPin === '4999';
 
     try {
@@ -252,14 +287,13 @@ import '../styles/medium.css';
       authOverlay.classList.remove('denied');
       authOverlay.classList.add('checking');
 
-      const res = await fetch(`${WORKER_URL}/auth`, {
+      const response = await fetch(`${WORKER_URL}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin: hiddenPin, name, isSuperAdmin })
       });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Authentication failed');
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Authentication failed');
 
       if (data.isNew && !name && newUserNameBlock.style.display === 'none') {
         newUserNameBlock.style.display = 'block';
@@ -300,19 +334,210 @@ import '../styles/medium.css';
     }
   }
 
+  async function loadChannels(preferredName = null) {
+    const data = await api('/channels');
+    currentChannels = Array.isArray(data.channels) ? data.channels : [];
+    renderChannels();
+
+    const targetName = preferredName || activeChannel?.name || 'general';
+    const target = currentChannels.find((channel) => channel.name === targetName) || currentChannels[0];
+    if (target) await selectChannel(target.name, false);
+  }
+
+  function renderChannels() {
+    const list = $('channelNavList');
+    list.replaceChildren();
+
+    currentChannels.forEach((channel) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'channel-item' + (activeChannel?.id === channel.id ? ' active' : '');
+      button.textContent = `# ${channel.name}`;
+      button.title = channel.description || channel.name;
+      button.addEventListener('click', () => selectChannel(channel.name));
+      list.appendChild(button);
+    });
+  }
+
+  async function selectChannel(channelName, reportActivity = true) {
+    const channel = currentChannels.find((item) => item.name === channelName);
+    if (!channel) return;
+    activeChannel = channel;
+    $('activeChannelHeading').textContent = `# ${channel.name}`;
+    $('activeChannelDesc').textContent = channel.description || 'Project discussion';
+    $('btnDeleteGroup').style.display = channel.name === 'general' || !['admin', 'superadmin'].includes(currentUser?.role) ? 'none' : 'inline-flex';
+    renderChannels();
+    $('messagesFeed').innerHTML = '<div class="state-message">Loading messages...</div>';
+
+    try {
+      const data = await api(`/messages?channel=${encodeURIComponent(channel.name)}`);
+      renderMessages(Array.isArray(data.messages) ? data.messages : []);
+      if (reportActivity) {
+        await api('/activity', {
+          method: 'POST',
+          body: JSON.stringify({ channel: channel.name, action: 'VIEWED' })
+        });
+      }
+    } catch (err) {
+      $('messagesFeed').innerHTML = `<div class="state-message">Unable to load this channel.</div>`;
+      showAppError(err);
+    }
+  }
+
+  function renderMessages(messages) {
+    const feed = $('messagesFeed');
+    feed.replaceChildren();
+    if (!messages.length) {
+      const empty = document.createElement('div');
+      empty.className = 'state-message';
+      empty.textContent = 'No messages yet. Start the conversation.';
+      feed.appendChild(empty);
+      return;
+    }
+
+    messages.forEach((message) => {
+      const article = document.createElement('article');
+      article.className = 'message-card';
+      const own = currentUser && message.pin === currentUser.pin;
+      const canDelete = currentUser && (currentUser.role === 'superadmin' || own || (currentUser.role === 'admin' && message.role === 'user'));
+      article.innerHTML = `
+        <div class="message-meta">
+          <strong>${esc(message.author || 'Unknown')}</strong>
+          <span>${esc(message.role || 'user')}</span>
+          <time>${esc(formatTime(message.time || message.createdAt))}</time>
+        </div>
+        <div class="message-text">${esc(message.text)}</div>
+        ${canDelete ? `<button type="button" class="message-delete" data-message-id="${Number(message.id)}">Delete</button>` : ''}
+      `;
+      const deleteButton = article.querySelector('.message-delete');
+      if (deleteButton) deleteButton.addEventListener('click', () => deleteMessage(message.id));
+      feed.appendChild(article);
+    });
+  }
+
+  async function deleteMessage(id) {
+    if (!confirm('Delete this message?')) return;
+    try {
+      await api(`/messages/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await selectChannel(activeChannel.name, false);
+    } catch (err) {
+      alert(err.message || 'Unable to delete message.');
+    }
+  }
+
+  window.handlePostMessage = async function handlePostMessage() {
+    if (!currentUser || !activeChannel) return;
+    const input = $('msgInput');
+    const text = input.value.trim();
+    if (!text) return;
+
+    const button = document.querySelector('.btn-send');
+    input.disabled = true;
+    if (button) button.disabled = true;
+    try {
+      await api('/messages', {
+        method: 'POST',
+        body: JSON.stringify({ channel: activeChannel.name, text })
+      });
+      input.value = '';
+      await selectChannel(activeChannel.name, false);
+      input.focus();
+    } catch (err) {
+      alert(err.message || 'Unable to post message.');
+    } finally {
+      input.disabled = false;
+      if (button) button.disabled = false;
+    }
+  };
+
+  window.createCustomGroup = async function createCustomGroup() {
+    if (!currentUser) return;
+    const name = prompt('Channel name:');
+    if (name === null) return;
+    const description = prompt('Channel description:', 'Project discussion') || 'Project discussion';
+    try {
+      const data = await api('/channels', {
+        method: 'POST',
+        body: JSON.stringify({ name, description })
+      });
+      await loadChannels(data.channel?.name || name.trim().toLowerCase());
+    } catch (err) {
+      alert(err.message || 'Unable to create channel.');
+    }
+  };
+
+  window.deleteCurrentGroup = async function deleteCurrentGroup() {
+    if (!activeChannel || activeChannel.name === 'general') return;
+    if (!['admin', 'superadmin'].includes(currentUser?.role)) return;
+    if (!confirm(`Delete #${activeChannel.name} and its messages?`)) return;
+    try {
+      await api(`/channels?id=${encodeURIComponent(activeChannel.id)}`, { method: 'DELETE' });
+      activeChannel = null;
+      await loadChannels('general');
+    } catch (err) {
+      alert(err.message || 'Unable to delete channel.');
+    }
+  };
+
+  async function loadAdminUsers() {
+    if (currentUser?.role !== 'superadmin') return;
+    const deck = $('superAdminDeck');
+    const rows = $('adminUserRows');
+    rows.innerHTML = '<div class="state-message">Loading authority data...</div>';
+    try {
+      const data = await api('/users');
+      const users = Array.isArray(data.users) ? data.users : [];
+      rows.replaceChildren();
+      users.forEach((user) => {
+        const row = document.createElement('div');
+        row.className = 'admin-user-row';
+        row.innerHTML = `
+          <span><strong>${esc(user.name)}</strong> · PIN ${esc(user.pin)}</span>
+          <span>${esc(user.role)}</span>
+          ${user.pin !== currentUser.pin ? `<button type="button" class="btn-ctrl" data-pin="${esc(user.pin)}" data-role="${esc(user.role === 'admin' ? 'user' : 'admin')}">${user.role === 'admin' ? 'Make User' : 'Make Admin'}</button>` : ''}
+        `;
+        const action = row.querySelector('button');
+        if (action) action.addEventListener('click', () => changeUserRole(action.dataset.pin, action.dataset.role));
+        rows.appendChild(row);
+      });
+      deck.style.display = 'block';
+    } catch (err) {
+      rows.innerHTML = `<div class="state-message">Authority data unavailable.</div>`;
+      showAppError(err);
+    }
+  }
+
+  async function changeUserRole(pin, role) {
+    try {
+      await api('/users/role', { method: 'PUT', body: JSON.stringify({ pin, role }) });
+      await loadAdminUsers();
+    } catch (err) {
+      alert(err.message || 'Unable to change user role.');
+    }
+  }
+
+  async function initApp() {
+    if (!currentUser || appLoading) return;
+    appLoading = true;
+    $('userDisplayName').textContent = currentUser.name || '';
+    $('superAdminDeck').style.display = currentUser.role === 'superadmin' ? 'block' : 'none';
+    try {
+      await loadChannels();
+      if (currentUser.role === 'superadmin') await loadAdminUsers();
+    } catch (err) {
+      $('messagesFeed').innerHTML = '<div class="state-message">Unable to connect to Convo.</div>';
+      showAppError(err);
+    } finally {
+      appLoading = false;
+    }
+  }
+
   if (currentPin && currentUser) {
     authOverlay.style.display = 'none';
     initApp();
   } else {
     authOverlay.style.display = 'flex';
     requestAnimationFrame(focusAccess);
-  }
-
-  function initApp() {
-    if (!currentUser) return;
-    document.getElementById('userDisplayName').textContent = currentUser.name || '';
-    const deck = document.getElementById('superAdminDeck');
-    deck.style.display = currentUser.role === 'superadmin' ? 'block' : 'none';
   }
 </script>
 </body>
