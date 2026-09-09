@@ -900,6 +900,10 @@ export default {
         path === "/channels" &&
         request.method === "POST"
       ) {
+        if (!["admin", "superadmin"].includes(user.role)) {
+          return error("Forbidden.", 403);
+        }
+
         const body = await request
           .json()
           .catch(() => ({}));
@@ -1038,22 +1042,14 @@ export default {
           .catch(() => ({}));
 
         const channelName = String(
-          body.channel || "general"
+          body.channel || ""
         )
           .trim()
-          .slice(0, MAX_CHANNEL_LENGTH);
+          .toLowerCase();
 
         const text = String(
           body.text || ""
-        )
-          .trim()
-          .slice(0, MAX_MESSAGE_LENGTH);
-
-        if (!text) {
-          return error(
-            "Message cannot be empty."
-          );
-        }
+        ).trim();
 
         if (!channelName) {
           return error(
@@ -1061,19 +1057,23 @@ export default {
           );
         }
 
-        let channel =
+        if (!text) {
+          return error(
+            "Message cannot be empty."
+          );
+        }
+
+        if (text.length > MAX_MESSAGE_LENGTH) {
+          return error(
+            `Message exceeds ${MAX_MESSAGE_LENGTH} characters.`
+          );
+        }
+
+        const channel =
           await getChannelByName(
             env,
             channelName
           );
-
-        if (
-          !channel &&
-          channelName === "general"
-        ) {
-          channel =
-            await ensureGeneralChannel(env);
-        }
 
         if (!channel) {
           return error(
@@ -1102,16 +1102,16 @@ export default {
                 text,
               },
               headers: {
-                Prefer:
-                  "return=representation",
+                Prefer: "return=representation",
               },
             }
           );
 
-        const dbMessage =
-          Array.isArray(inserted)
-            ? inserted[0]
-            : inserted;
+        const message = Array.isArray(
+          inserted
+        )
+          ? inserted[0]
+          : inserted;
 
         await recordActivity(
           env,
@@ -1120,98 +1120,67 @@ export default {
           "POSTED"
         );
 
-        await supabaseFetch(
-          env,
-          "channel_members",
-          {
-            method: "PATCH",
-            query:
-              `?channel_id=eq.${encodeURIComponent(
-                channel.id
-              )}` +
-              `&user_id=eq.${encodeURIComponent(
-                user.id
-              )}`,
-            body: {
-              last_viewed_at:
-                new Date().toISOString(),
-            },
-            headers: {
-              Prefer: "return=minimal",
-            },
-          }
-        );
-
-        const message = {
-          id: dbMessage.id,
-          channel: channel.name,
-          channelId: channel.id,
-          pin: user.pin,
-          author: user.name,
-          role: user.role,
-          text: dbMessage.text,
-          time: dbMessage.created_at,
-          createdAt: dbMessage.created_at,
-        };
-
         return response({
           ok: true,
-          success: true,
-          message,
+          message: await formatMessage(
+            {
+              ...message,
+              channel_name: channel.name,
+            },
+            user
+          ),
         });
       }
 
       /*
-       * MESSAGE - DELETE
+       * MESSAGES - DELETE
        */
-      const messageMatch =
-        path.match(
-          /^\/messages\/(\d+)$/
-        );
-
       if (
-        messageMatch &&
+        path.startsWith("/messages/") &&
         request.method === "DELETE"
       ) {
-        const id = Number(
-          messageMatch[1]
+        const id = path.split("/").pop();
+
+        if (!id) {
+          return error(
+            "Message id is required."
+          );
+        }
+
+        const rows = await supabaseFetch(
+          env,
+          "messages",
+          {
+            query:
+              `?select=id,channel_id,user_id,text,created_at,` +
+              `users(pin,name,role)` +
+              `&id=eq.${encodeURIComponent(id)}` +
+              `&limit=1`,
+          }
         );
 
-        const messages =
-          await supabaseFetch(
-            env,
-            "messages",
-            {
-              query:
-                `?select=id,channel_id,user_id,text,created_at,` +
-                `users(pin,name,role)` +
-                `&id=eq.${id}` +
-                `&limit=1`,
-            }
-          );
+        const message =
+          Array.isArray(rows) && rows.length
+            ? rows[0]
+            : null;
 
-        if (
-          !Array.isArray(messages) ||
-          !messages.length
-        ) {
+        if (!message) {
           return error(
             "Message not found.",
             404
           );
         }
 
-        const message = messages[0];
-
-        const messageForPermission = {
-          user_id: message.user_id,
+        const permissionMessage = {
+          ...message,
           user_role:
-            message.users?.role,
+            message.users?.role || "user",
         };
 
         if (
           !canDeleteMessage(
             user,
-            messageForPermission
+            permissionMessage
           )
         ) {
           return error(
@@ -1226,11 +1195,18 @@ export default {
           {
             method: "DELETE",
             query:
-              `?id=eq.${id}`,
+              `?id=eq.${encodeURIComponent(id)}`,
             headers: {
               Prefer: "return=minimal",
             },
           }
+        );
+
+        await recordActivity(
+          env,
+          user.id,
+          message.channel_id,
+          "POSTED"
         );
 
         return response({
@@ -1240,9 +1216,6 @@ export default {
 
       /*
        * ACTIVITY
-       *
-       * Used by the frontend when a user actually
-       * opens/views a channel.
        */
       if (
         path === "/activity" &&
@@ -1252,25 +1225,12 @@ export default {
           .json()
           .catch(() => ({}));
 
-        const channelName =
-          String(
-            body.channel || ""
-          ).trim();
-
-        const action =
-          String(
-            body.action || "VIEWED"
-          ).toUpperCase();
-
-        const allowedActions = [
-          "JOINED",
-          "VIEWED",
-          "POSTED",
-          "LEFT",
-        ];
+        const action = String(
+          body.action || "VIEWED"
+        ).toUpperCase();
 
         if (
-          !allowedActions.includes(
+          !["JOINED", "VIEWED", "POSTED", "LEFT"].includes(
             action
           )
         ) {
@@ -1279,63 +1239,29 @@ export default {
           );
         }
 
-        let channel = null;
+        let channelId = null;
 
-        if (channelName) {
-          channel =
+        if (body.channel) {
+          const channel =
             await getChannelByName(
               env,
-              channelName
+              String(body.channel).trim().toLowerCase()
             );
-        }
 
-        if (
-          action !== "VIEWED" &&
-          !channel
-        ) {
-          return error(
-            "Channel not found.",
-            404
-          );
-        }
+          if (!channel) {
+            return error(
+              "Channel not found.",
+              404
+            );
+          }
 
-        if (channel) {
-          await ensureChannelMember(
-            env,
-            channel.id,
-            user.id
-          );
-
-          await supabaseFetch(
-            env,
-            "channel_members",
-            {
-              method: "PATCH",
-              query:
-                `?channel_id=eq.${encodeURIComponent(
-                  channel.id
-                )}` +
-                `&user_id=eq.${encodeURIComponent(
-                  user.id
-                )}`,
-              body: {
-                last_viewed_at:
-                  action === "VIEWED"
-                    ? new Date().toISOString()
-                    : undefined,
-              },
-              headers: {
-                Prefer:
-                  "return=minimal",
-              },
-            }
-          );
+          channelId = channel.id;
         }
 
         await recordActivity(
           env,
           user.id,
-          channel?.id || null,
+          channelId,
           action
         );
 
@@ -1345,17 +1271,13 @@ export default {
       }
 
       /*
-       * USERS
-       *
-       * Superadmin only.
+       * USERS - LIST
        */
       if (
         path === "/users" &&
         request.method === "GET"
       ) {
-        if (
-          user.role !== "superadmin"
-        ) {
+        if (user.role !== "superadmin") {
           return error(
             "Forbidden.",
             403
@@ -1376,51 +1298,54 @@ export default {
       }
 
       /*
-       * CHANGE USER ROLE
+       * USERS - ROLE
        */
       if (
         path === "/users/role" &&
         request.method === "PUT"
       ) {
-        if (
-          user.role !== "superadmin"
-        ) {
+        if (user.role !== "superadmin") {
           return error(
             "Forbidden.",
             403
           );
         }
 
-        const body =
-          await request
-            .json()
-            .catch(() => ({}));
+        const body = await request
+          .json()
+          .catch(() => ({}));
 
         const pin = String(
           body.pin || ""
         );
 
         const role = String(
-          body.role || "user"
+          body.role || ""
         );
 
+        if (!validPin(pin)) {
+          return error(
+            "Valid user PIN is required."
+          );
+        }
+
         if (
-          !validPin(pin) ||
-          !["admin", "user"].includes(
-            role
-          ) ||
-          pin === user.pin
+          !["user", "admin"].includes(role)
         ) {
           return error(
-            "Invalid role change."
+            "Role must be user or admin."
+          );
+        }
+
+        if (pin === "4999") {
+          return error(
+            "The super admin cannot be changed.",
+            403
           );
         }
 
         const target =
-          await getUserByPin(
-            env,
-            pin
-          );
+          await getUserByPin(env, pin);
 
         if (!target) {
           return error(
@@ -1435,15 +1360,14 @@ export default {
           {
             method: "PATCH",
             query:
-              `?pin=eq.${encodeURIComponent(
-                pin
+              `?id=eq.${encodeURIComponent(
+                target.id
               )}`,
             body: {
               role,
             },
             headers: {
-              Prefer:
-                "return=minimal",
+              Prefer: "return=minimal",
             },
           }
         );
@@ -1454,42 +1378,35 @@ export default {
       }
 
       /*
-       * ADMIN ANALYTICS
-       *
-       * Superadmin only.
+       * ANALYTICS
        */
       if (
-        path === "/admin/analytics" &&
+        path === "/analytics" &&
         request.method === "GET"
       ) {
-        if (
-          user.role !== "superadmin"
-        ) {
+        if (user.role !== "superadmin") {
           return error(
             "Forbidden.",
             403
           );
         }
 
-        const analytics =
-          await getAnalytics(env);
-
-        return response({
-          ok: true,
-          ...analytics,
-        });
+        return response(
+          await getAnalytics(env)
+        );
       }
 
       return error(
         "Not found.",
         404
       );
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
 
       return error(
-        e.message || "Server error.",
-        e.status || 500
+        err?.message ||
+          "Internal server error.",
+        err?.status || 500
       );
     }
   },
