@@ -680,3 +680,40 @@ body {
   .main-stage::after { animation: none; }
   #messagesFeed > *, .channel-list > *, .btn-send, .btn-ctrl, .btn-add-group, .logout-link { transition: none; }
 }
+
+/* CONVO MESSAGE CONTEXT MENU */
+.message-delete { display: none !important; }
+
+.message-context-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 120px;
+  padding: 5px;
+  border: 1px solid rgba(56,189,248,.28);
+  border-radius: 5px;
+  background: linear-gradient(145deg, rgba(11,24,38,.98), rgba(2,8,15,.98));
+  box-shadow: 0 14px 32px rgba(0,0,0,.52), 0 0 18px rgba(56,189,248,.10), inset 0 1px rgba(255,255,255,.05);
+  backdrop-filter: blur(16px);
+}
+
+.message-context-menu[hidden] { display: none; }
+
+.message-context-delete {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #fda4af;
+  font-family: var(--font-mono);
+  font-size: .62rem;
+  letter-spacing: .08em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.message-context-delete:hover {
+  background: rgba(239,68,68,.10);
+  color: #fecaca;
+}

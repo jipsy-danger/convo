@@ -554,6 +554,57 @@ import '../styles/medium.css';
     }
   }
 
+
+  // MESSAGE CONTEXT MENU PATCH
+  const messageContextMenu = document.createElement('div');
+  messageContextMenu.className = 'message-context-menu';
+  messageContextMenu.hidden = true;
+  messageContextMenu.innerHTML = '<button type="button" class="message-context-delete">Delete</button>';
+  document.body.appendChild(messageContextMenu);
+
+  let contextDeleteId = null;
+
+  function closeMessageContextMenu() {
+    messageContextMenu.hidden = true;
+    contextDeleteId = null;
+  }
+
+  document.addEventListener('contextmenu', (event) => {
+    const article = event.target.closest('#messagesFeed .message-card');
+    const deleteButton = article?.querySelector('.message-delete');
+    if (!article || !deleteButton) {
+      closeMessageContextMenu();
+      return;
+    }
+
+    event.preventDefault();
+    contextDeleteId = deleteButton.dataset.messageId;
+    messageContextMenu.hidden = false;
+
+    const menuWidth = 120;
+    const menuHeight = 42;
+    const left = Math.min(event.clientX, window.innerWidth - menuWidth - 8);
+    const top = Math.min(event.clientY, window.innerHeight - menuHeight - 8);
+    messageContextMenu.style.left = `${Math.max(8, left)}px`;
+    messageContextMenu.style.top = `${Math.max(8, top)}px`;
+  });
+
+  messageContextMenu.querySelector('.message-context-delete').addEventListener('click', () => {
+    if (contextDeleteId !== null) deleteMessage(contextDeleteId);
+    closeMessageContextMenu();
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!messageContextMenu.contains(event.target)) closeMessageContextMenu();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeMessageContextMenu();
+  });
+
+  window.addEventListener('scroll', closeMessageContextMenu, true);
+  window.addEventListener('resize', closeMessageContextMenu);
+
   window.handlePostMessage = async function handlePostMessage() {
     if (!currentUser || !activeChannel) return;
     const input = $('msgInput');
