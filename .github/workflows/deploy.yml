@@ -146,11 +146,19 @@ jobs:
           path = Path('.github/workflows/deploy.yml')
           text = path.read_text(encoding='utf-8')
           start = text.index('      - name: Apply one-time message context menu patch\n')
-          end = text.index('      - name: Checkout repository\n', start) if False else -1
           next_step = text.index('      - name: Install dependencies\n', start)
           text = text[:start] + text[next_step:]
           path.write_text(text, encoding='utf-8')
           PY
+
+      - name: Commit one-time patch
+        if: startsWith(github.event.head_commit.message, 'Apply message context menu patch')
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/pages/index.astro src/styles/medium.css .github/workflows/deploy.yml
+          git commit -m 'Show message actions on right click'
+          git push
 
       - name: Install dependencies
         run: npm ci
