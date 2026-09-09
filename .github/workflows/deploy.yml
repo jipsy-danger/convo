@@ -48,4 +48,4 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-# Keep Pages deployment triggered by the source correction commit.
+# Crisp app UI correction is deployed from the source commit.
