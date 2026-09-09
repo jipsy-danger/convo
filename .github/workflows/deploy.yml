@@ -48,4 +48,4 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-# Crisp app UI correction is deployed from the source commit.
+# Deploy the current hidden super admin authentication correction.
