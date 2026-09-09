@@ -8,6 +8,103 @@ import '../styles/medium.css';
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Convo • Project Hub</title>
+  <style>
+    .channel-modal[hidden] { display: none; }
+    .channel-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 900;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: var(--font-sans);
+    }
+    .channel-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(2, 7, 13, .78);
+      backdrop-filter: blur(8px);
+    }
+    .channel-modal-card {
+      position: relative;
+      width: min(420px, 94vw);
+      padding: 26px;
+      background: rgba(8, 14, 24, .96);
+      border: 1px solid rgba(56, 189, 248, .24);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, .5), 0 0 32px rgba(56, 189, 248, .08);
+      border-radius: 6px;
+    }
+    .channel-modal-title {
+      color: #e9f8ff;
+      font-family: var(--font-mono);
+      font-size: .72rem;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    .channel-modal-subtitle {
+      margin-top: 5px;
+      color: var(--text-muted);
+      font-size: .84rem;
+    }
+    .channel-modal-field { margin-top: 18px; }
+    .channel-modal-label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: .58rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .channel-modal-input {
+      width: 100%;
+      height: 40px;
+      padding: 8px 11px;
+      border: 1px solid rgba(56, 189, 248, .18);
+      border-radius: 3px;
+      outline: none;
+      background: rgba(3, 10, 17, .86);
+      color: #fff;
+      font-family: var(--font-sans);
+    }
+    .channel-modal-input:focus {
+      border-color: rgba(56, 189, 248, .58);
+      box-shadow: 0 0 16px rgba(56, 189, 248, .08);
+    }
+    .channel-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 9px;
+      margin-top: 22px;
+    }
+    .channel-modal-button {
+      min-width: 88px;
+      height: 36px;
+      padding: 0 14px;
+      border: 1px solid rgba(56, 189, 248, .22);
+      border-radius: 3px;
+      background: rgba(56, 189, 248, .05);
+      color: #dff8ff;
+      font-family: var(--font-mono);
+      font-size: .58rem;
+      letter-spacing: .1em;
+      cursor: pointer;
+    }
+    .channel-modal-button:hover { border-color: rgba(56, 189, 248, .55); }
+    .channel-modal-button.primary {
+      background: rgba(37, 99, 235, .2);
+      border-color: rgba(56, 189, 248, .4);
+    }
+    .channel-modal-button:disabled { opacity: .5; cursor: wait; }
+    .channel-modal-error {
+      min-height: 18px;
+      margin-top: 9px;
+      color: #fca5a5;
+      font-family: var(--font-mono);
+      font-size: .58rem;
+    }
+  </style>
 </head>
 <body>
   <div id="authOverlay" class="auth-overlay">
@@ -57,7 +154,7 @@ import '../styles/medium.css';
         <div>
           <div class="nav-header">
             <span class="nav-label">Team Channels</span>
-            <button class="btn-add-group" onclick="createCustomGroup()" title="Create Group">+</button>
+            <button id="btnCreateChannel" class="btn-add-group" onclick="createCustomGroup()" title="Create Channel">+</button>
           </div>
           <div id="channelNavList" class="channel-list"></div>
         </div>
@@ -91,6 +188,31 @@ import '../styles/medium.css';
     </section>
   </div>
 
+  <div id="channelModal" class="channel-modal" hidden>
+    <div class="channel-modal-backdrop" data-close-channel-modal></div>
+    <form id="channelForm" class="channel-modal-card" novalidate>
+      <div class="channel-modal-title">Create Channel</div>
+      <div class="channel-modal-subtitle">Add a new team discussion channel.</div>
+
+      <div class="channel-modal-field">
+        <label class="channel-modal-label" for="channelNameInput">Channel name</label>
+        <input id="channelNameInput" class="channel-modal-input" type="text" maxlength="40" placeholder="e.g. development" autocomplete="off" required />
+      </div>
+
+      <div class="channel-modal-field">
+        <label class="channel-modal-label" for="channelDescriptionInput">Description</label>
+        <input id="channelDescriptionInput" class="channel-modal-input" type="text" maxlength="40" placeholder="Project discussion" autocomplete="off" />
+      </div>
+
+      <div id="channelModalError" class="channel-modal-error" aria-live="polite"></div>
+
+      <div class="channel-modal-actions">
+        <button id="btnCancelChannel" class="channel-modal-button" type="button">Cancel</button>
+        <button id="btnSubmitChannel" class="channel-modal-button primary" type="submit">Create</button>
+      </div>
+    </form>
+  </div>
+
   <script is:inline>
   const WORKER_URL = 'https://convo-api.atityaramsureshmanickam.workers.dev';
   let currentPin = localStorage.getItem('convo_active_pin') || null;
@@ -116,8 +238,8 @@ import '../styles/medium.css';
   const progressSegments = [...document.querySelectorAll('.hud-progress span')];
 
   const $ = (id) => document.getElementById(id);
-  const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  const esc = (value) => String(value ?? '').replace(/[&<>\"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;'
   }[char]));
   const formatTime = (value) => {
     const date = new Date(value);
@@ -188,6 +310,7 @@ import '../styles/medium.css';
   btnLogout.addEventListener('click', handleLogout);
 
   function handleLogout() {
+    closeChannelModal();
     localStorage.removeItem('convo_active_pin');
     localStorage.removeItem('convo_user');
     sessionStorage.removeItem('convo_active_pin');
@@ -215,6 +338,7 @@ import '../styles/medium.css';
     $('superAdminDeck').style.display = 'none';
     $('userDisplayName').textContent = '';
     $('btnDeleteGroup').style.display = 'none';
+    $('btnCreateChannel').style.display = 'none';
     requestAnimationFrame(focusAccess);
   }
 
@@ -450,21 +574,61 @@ import '../styles/medium.css';
     }
   };
 
-  window.createCustomGroup = async function createCustomGroup() {
-    if (!currentUser) return;
-    const name = prompt('Channel name:');
-    if (name === null) return;
-    const description = prompt('Channel description:', 'Project discussion') || 'Project discussion';
+  const channelModal = $('channelModal');
+  const channelForm = $('channelForm');
+  const channelNameInput = $('channelNameInput');
+  const channelDescriptionInput = $('channelDescriptionInput');
+  const channelModalError = $('channelModalError');
+  const btnSubmitChannel = $('btnSubmitChannel');
+
+  function closeChannelModal() {
+    channelModal.hidden = true;
+    channelForm.reset();
+    channelModalError.textContent = '';
+    btnSubmitChannel.disabled = false;
+    btnSubmitChannel.textContent = 'Create';
+  }
+
+  window.createCustomGroup = function createCustomGroup() {
+    if (!currentUser || !['admin', 'superadmin'].includes(currentUser.role)) return;
+    channelModal.hidden = false;
+    channelModalError.textContent = '';
+    requestAnimationFrame(() => channelNameInput.focus());
+  };
+
+  channelForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!currentUser || !['admin', 'superadmin'].includes(currentUser.role)) return;
+
+    const name = channelNameInput.value.trim();
+    const description = channelDescriptionInput.value.trim() || 'Project discussion';
+
+    if (!name) {
+      channelModalError.textContent = 'Channel name is required.';
+      channelNameInput.focus();
+      return;
+    }
+
+    btnSubmitChannel.disabled = true;
+    btnSubmitChannel.textContent = 'Creating...';
+    channelModalError.textContent = '';
+
     try {
       const data = await api('/channels', {
         method: 'POST',
         body: JSON.stringify({ name, description })
       });
+      closeChannelModal();
       await loadChannels(data.channel?.name || name.trim().toLowerCase());
     } catch (err) {
-      alert(err.message || 'Unable to create channel.');
+      channelModalError.textContent = err.message || 'Unable to create channel.';
+      btnSubmitChannel.disabled = false;
+      btnSubmitChannel.textContent = 'Create';
     }
-  };
+  });
+
+  $('btnCancelChannel').addEventListener('click', closeChannelModal);
+  document.querySelector('[data-close-channel-modal]').addEventListener('click', closeChannelModal);
 
   window.deleteCurrentGroup = async function deleteCurrentGroup() {
     if (!activeChannel || activeChannel.name === 'general') return;
@@ -521,6 +685,7 @@ import '../styles/medium.css';
     appLoading = true;
     $('userDisplayName').textContent = currentUser.name || '';
     $('superAdminDeck').style.display = currentUser.role === 'superadmin' ? 'block' : 'none';
+    $('btnCreateChannel').style.display = ['admin', 'superadmin'].includes(currentUser.role) ? 'inline-flex' : 'none';
     try {
       await loadChannels();
       if (currentUser.role === 'superadmin') await loadAdminUsers();
