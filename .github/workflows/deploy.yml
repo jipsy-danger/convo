@@ -1,4 +1,4 @@
-name: Apply crisp HUD rendering fix
+name: Deploy to GitHub Pages
 
 on:
   push:
@@ -6,41 +6,44 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
-  patch:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Remove login HUD 3D compositor transforms
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('src/styles/medium.css')
-          text = path.read_text()
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
-          replacements = [
-              ('''\n.auth-card {\n  transform: perspective(1200px) rotateX(1deg) translateZ(18px);\n  transform-style: preserve-3d;\n}\n''', '''\n/* Keep the login HUD text in a crisp 2D compositor layer. */\n'''),
-              ('''\n.hud-brand,\n.hud-status,\n.hud-progress,\n.hud-hint,\n.hud-enter,\n.new-user-block {\n  transform: translateZ(28px);\n}\n''', '''\n'''),
-              ('''\n.auth-card::after {\n  transform: translateZ(-8px) rotateX(72deg) scaleY(.48);\n  box-shadow: 0 0 90px rgba(37,99,235,.10), inset 0 0 50px rgba(56,189,248,.04);\n}\n''', '''\n.auth-card::after {\n  box-shadow: 0 0 90px rgba(37,99,235,.10), inset 0 0 50px rgba(56,189,248,.04);\n}\n''')
-          ]
+      - name: Install dependencies
+        run: npm ci
 
-          for old, new in replacements:
-              if old not in text:
-                  raise SystemExit(f'Missing expected CSS block: {old[:60]!r}')
-              text = text.replace(old, new, 1)
+      - name: Build Astro site
+        run: npm run build
 
-          path.write_text(text)
-          PY
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
 
-      - name: Commit source correction
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/styles/medium.css
-          git diff --cached --quiet && exit 0
-          git commit -m "Fix login HUD blur"
-          git push
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
