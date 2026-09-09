@@ -10,14 +10,12 @@ import '../styles/medium.css';
   <title>Convo • Project Hub</title>
 </head>
 <body>
-  <!-- Single holographic access gate. Keyboard input remains functional but is intentionally invisible. -->
   <div id="authOverlay" class="auth-overlay">
     <form id="authForm" class="auth-card" novalidate>
       <div class="hud-corner hud-corner-tl"></div>
       <div class="hud-corner hud-corner-tr"></div>
       <div class="hud-corner hud-corner-bl"></div>
       <div class="hud-corner hud-corner-br"></div>
-
       <div class="hud-brand">CONVO</div>
       <div class="hud-status" id="hudStatus">ACCESS SYSTEM READY</div>
 
@@ -33,21 +31,10 @@ import '../styles/medium.css';
       <div class="hud-progress" aria-hidden="true">
         <span></span><span></span><span></span><span></span>
       </div>
-
       <div class="hud-hint" id="hudHint">ENTER ACCESS CODE</div>
       <div class="hud-subhint">HOLD SHIFT FOR ADMIN CORE</div>
 
-      <!-- Invisible input: real keyboard entry, no visible PIN box or keypad. -->
-      <input
-        type="password"
-        id="pinInput"
-        class="pin-input-hidden"
-        maxlength="4"
-        inputmode="numeric"
-        autocomplete="off"
-        aria-label="Access code"
-        tabindex="0"
-      />
+      <input type="password" id="pinInput" class="pin-input-hidden" maxlength="4" inputmode="numeric" autocomplete="off" aria-label="Access code" tabindex="0" />
 
       <div id="newUserNameBlock" class="new-user-block" style="display: none;">
         <div class="new-user-label">IDENTITY REGISTRATION</div>
@@ -58,7 +45,6 @@ import '../styles/medium.css';
     </form>
   </div>
 
-  <!-- Main App Shell -->
   <div class="app-layout">
     <aside class="sidebar">
       <div class="brand-section">
@@ -68,7 +54,6 @@ import '../styles/medium.css';
         </div>
         <button id="btnLogout" class="logout-link" type="button">Exit</button>
       </div>
-
       <nav class="nav-groups">
         <div>
           <div class="nav-header">
@@ -91,7 +76,6 @@ import '../styles/medium.css';
           <button id="btnDeleteGroup" class="btn-ctrl danger" style="display: none;" onclick="deleteCurrentGroup()">Delete Channel</button>
         </div>
       </header>
-
       <main class="chat-scroll-area">
         <section id="superAdminDeck" class="super-admin-deck" style="display: none;">
           <div class="deck-title">🛡️ Super Admin User Authority (PIN: 4999)</div>
@@ -99,7 +83,6 @@ import '../styles/medium.css';
         </section>
         <div id="messagesFeed" style="display: flex; flex-direction: column; gap: 16px;"></div>
       </main>
-
       <div class="input-dock">
         <form class="input-container" onsubmit="event.preventDefault(); handlePostMessage();">
           <input type="text" id="msgInput" class="chat-input" placeholder="Message this thread..." autocomplete="off" />
@@ -111,10 +94,8 @@ import '../styles/medium.css';
 
   <script is:inline>
   const WORKER_URL = 'https://convo-api.atityaramsureshmanickam.workers.dev';
-
   let currentPin = localStorage.getItem('convo_active_pin') || null;
   let currentUser = JSON.parse(localStorage.getItem('convo_user') || 'null');
-
   let hiddenPin = '';
   let isLeftShiftHeld = false;
   let isValidSuperAdminAttempt = true;
@@ -132,9 +113,7 @@ import '../styles/medium.css';
   const hudHint = document.getElementById('hudHint');
   const progressSegments = [...document.querySelectorAll('.hud-progress span')];
 
-  function focusAccess() {
-    pinInput.focus({ preventScroll: true });
-  }
+  function focusAccess() { pinInput.focus({ preventScroll: true }); }
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'ShiftLeft') {
@@ -143,7 +122,6 @@ import '../styles/medium.css';
       hudStatus.textContent = 'ADMIN CORE ARMED';
       hudHint.textContent = 'SHIFT ACCESS ACTIVE';
     }
-
     if (e.code === 'Escape') {
       e.preventDefault();
       hiddenPin = '';
@@ -175,14 +153,12 @@ import '../styles/medium.css';
     localStorage.removeItem('convo_user');
     sessionStorage.removeItem('convo_active_pin');
     sessionStorage.removeItem('convo_user');
-
     currentPin = null;
     currentUser = null;
     hiddenPin = '';
     isValidSuperAdminAttempt = true;
     isLeftShiftHeld = false;
     autoSubmitting = false;
-
     pinInput.value = '';
     nameInput.value = '';
     newUserNameBlock.style.display = 'none';
@@ -190,34 +166,27 @@ import '../styles/medium.css';
     btnLogin.disabled = false;
     hudStatus.textContent = 'ACCESS SYSTEM READY';
     hudHint.textContent = 'ENTER ACCESS CODE';
-    authOverlay.classList.remove('super-mode', 'granted', 'denied');
+    authOverlay.classList.remove('super-mode', 'granted', 'denied', 'checking');
     authOverlay.style.display = 'flex';
     updateHud();
-
     const feed = document.getElementById('messagesFeed');
     const channels = document.getElementById('channelNavList');
     const deck = document.getElementById('superAdminDeck');
     const userName = document.getElementById('userDisplayName');
-
     if (feed) feed.replaceChildren();
     if (channels) channels.replaceChildren();
     if (deck) deck.style.display = 'none';
     if (userName) userName.textContent = '';
-
     requestAnimationFrame(focusAccess);
   }
 
   function updateHud() {
-    progressSegments.forEach((segment, index) => {
-      segment.classList.toggle('filled', index < hiddenPin.length);
-    });
-
+    progressSegments.forEach((segment, index) => segment.classList.toggle('filled', index < hiddenPin.length));
     accessCore.style.setProperty('--entry-progress', `${hiddenPin.length * 25}%`);
   }
 
   pinInput.addEventListener('keydown', (e) => {
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.key === 'Tab') return;
-
     if (e.key === 'Backspace') {
       e.preventDefault();
       hiddenPin = hiddenPin.slice(0, -1);
@@ -228,29 +197,24 @@ import '../styles/medium.css';
       updateHud();
       return;
     }
-
     const match = e.code.match(/^(Digit|Numpad)(\d)$/);
     if (match && hiddenPin.length < 4) {
       e.preventDefault();
       hiddenPin += match[2];
       pinInput.value = '';
-
       if (!isLeftShiftHeld) isValidSuperAdminAttempt = false;
       updateHud();
-
       if (hiddenPin.length === 4 && !autoSubmitting) {
         autoSubmitting = true;
         requestAnimationFrame(() => authForm.requestSubmit());
       }
       return;
     }
-
     if (e.key === 'Enter') {
       e.preventDefault();
       if (!autoSubmitting) authForm.requestSubmit();
       return;
     }
-
     if (!e.ctrlKey && !e.metaKey && !e.altKey) e.preventDefault();
   });
 
@@ -287,10 +251,7 @@ import '../styles/medium.css';
 
       const res = await fetch(`${WORKER_URL}/auth`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(isSuperAdmin ? { 'X-Convo-Super-Shift': '1' } : {})
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin: hiddenPin, name, isSuperAdmin })
       });
 
@@ -313,16 +274,11 @@ import '../styles/medium.css';
       currentUser = data.user;
       localStorage.setItem('convo_active_pin', currentPin);
       localStorage.setItem('convo_user', JSON.stringify(currentUser));
-
       hudStatus.textContent = 'ACCESS GRANTED';
       hudHint.textContent = isSuperAdmin ? 'SUPER ADMIN CORE ONLINE' : 'IDENTITY VERIFIED';
       authOverlay.classList.remove('checking', 'denied');
       authOverlay.classList.add('granted');
-
-      setTimeout(() => {
-        authOverlay.style.display = 'none';
-        initApp();
-      }, 360);
+      setTimeout(() => { authOverlay.style.display = 'none'; initApp(); }, 360);
     } catch (err) {
       console.error(err);
       hudStatus.textContent = 'ACCESS DENIED';
