@@ -117,9 +117,12 @@ body {
   position: absolute;
   width: 48px;
   height: 48px;
+  padding: 0;
   border-color: rgba(56, 189, 248, .42);
   border-style: solid;
+  background: transparent;
   opacity: .75;
+  cursor: pointer;
 }
 .hud-corner-tl { top: 22px; left: 18px; border-width: 1px 0 0 1px; }
 .hud-corner-tr { top: 22px; right: 18px; border-width: 1px 1px 0 0; }

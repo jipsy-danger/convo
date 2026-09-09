@@ -109,10 +109,10 @@ import '../styles/medium.css';
 <body>
   <div id="authOverlay" class="auth-overlay">
     <form id="authForm" class="auth-card" novalidate>
-      <div class="hud-corner hud-corner-tl"></div>
-      <div class="hud-corner hud-corner-tr"></div>
-      <div class="hud-corner hud-corner-bl"></div>
-      <div class="hud-corner hud-corner-br"></div>
+      <button class="hud-corner hud-corner-tl" data-super-admin-corner type="button" aria-label="Arm super admin access"></button>
+      <button class="hud-corner hud-corner-tr" data-super-admin-corner type="button" aria-label="Arm super admin access"></button>
+      <button class="hud-corner hud-corner-bl" data-super-admin-corner type="button" aria-label="Arm super admin access"></button>
+      <button class="hud-corner hud-corner-br" data-super-admin-corner type="button" aria-label="Arm super admin access"></button>
       <div class="hud-brand">CONVO</div>
       <div class="hud-status" id="hudStatus">ACCESS SYSTEM READY</div>
 
@@ -220,7 +220,7 @@ import '../styles/medium.css';
   let currentChannels = [];
   let activeChannel = null;
   let hiddenPin = '';
-  let isLeftShiftHeld = false;
+  let superAdminMode = false;
   let isValidSuperAdminAttempt = true;
   let autoSubmitting = false;
   let appLoading = false;
@@ -275,36 +275,29 @@ import '../styles/medium.css';
     hudHint.textContent = 'CHECK WORKER ACCESS';
   }
 
-  window.addEventListener('keydown', (e) => {
-    if (e.code === 'ShiftLeft') {
-      isLeftShiftHeld = true;
+  document.querySelectorAll('[data-super-admin-corner]').forEach((corner) => {
+    corner.addEventListener('click', () => {
+      superAdminMode = true;
       authOverlay.classList.add('super-mode');
       hudStatus.textContent = 'ACCESS CORE ARMED';
-      hudHint.textContent = 'ENTER ACCESS CODE';
-    }
+      hudHint.textContent = 'ENTER SUPER ADMIN CODE';
+      focusAccess();
+    });
+  });
+
+  window.addEventListener('keydown', (e) => {
     if (e.code === 'Escape') {
       e.preventDefault();
       hiddenPin = '';
       pinInput.value = '';
       isValidSuperAdminAttempt = true;
       autoSubmitting = false;
+      superAdminMode = false;
       authOverlay.classList.remove('super-mode', 'denied');
       hudStatus.textContent = 'ACCESS SYSTEM READY';
       hudHint.textContent = 'ENTER ACCESS CODE';
       updateHud();
     }
-  });
-
-  window.addEventListener('keyup', (e) => {
-    if (e.code === 'ShiftLeft') {
-      isLeftShiftHeld = false;
-      if (!hiddenPin.length) authOverlay.classList.remove('super-mode');
-    }
-  });
-
-  window.addEventListener('blur', () => {
-    isLeftShiftHeld = false;
-    if (!hiddenPin.length) authOverlay.classList.remove('super-mode');
   });
 
   btnLogout.addEventListener('click', handleLogout);
@@ -321,7 +314,7 @@ import '../styles/medium.css';
     activeChannel = null;
     hiddenPin = '';
     isValidSuperAdminAttempt = true;
-    isLeftShiftHeld = false;
+    superAdminMode = false;
     autoSubmitting = false;
     pinInput.value = '';
     nameInput.value = '';
@@ -364,7 +357,7 @@ import '../styles/medium.css';
       e.preventDefault();
       hiddenPin += match[2];
       pinInput.value = '';
-      if (!isLeftShiftHeld) isValidSuperAdminAttempt = false;
+      isValidSuperAdminAttempt = superAdminMode ? hiddenPin === '4999' : true;
       updateHud();
       if (hiddenPin.length === 4 && !autoSubmitting) {
         autoSubmitting = true;
@@ -401,7 +394,19 @@ import '../styles/medium.css';
     }
 
     const name = nameInput.value.trim();
-    const isSuperAdmin = hiddenPin === '4999';
+    if (hiddenPin === '4999' && !superAdminMode) {
+      hudStatus.textContent = 'SUPER ADMIN CORE LOCKED';
+      hudHint.textContent = 'ARM THE CORNER ACCESS FIRST';
+      authOverlay.classList.add('denied');
+      autoSubmitting = false;
+      hiddenPin = '';
+      pinInput.value = '';
+      updateHud();
+      focusAccess();
+      return;
+    }
+
+    const isSuperAdmin = superAdminMode && hiddenPin === '4999';
 
     try {
       btnLogin.textContent = 'VERIFYING';
