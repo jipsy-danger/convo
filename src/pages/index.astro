@@ -28,14 +28,13 @@ import '../styles/medium.css';
 
   <!-- Main App Shell -->
   <div class="app-layout">
-    <!-- Left Navigation Sidebar -->
     <aside class="sidebar">
       <div class="brand-section">
         <div class="brand-wrapper">
           <div class="brand-logo">C</div>
           <div class="brand-name">convo</div>
         </div>
-        <span class="logout-link" onclick="handleLogout()">Exit</span>
+        <button id="btnLogout" class="logout-link" type="button">Exit</button>
       </div>
 
       <nav class="nav-groups">
@@ -44,14 +43,11 @@ import '../styles/medium.css';
             <span class="nav-label">Team Channels</span>
             <button class="btn-add-group" onclick="createCustomGroup()" title="Create Group">+</button>
           </div>
-          <div id="channelNavList" class="channel-list">
-            <!-- Dynamic Channels -->
-          </div>
+          <div id="channelNavList" class="channel-list"></div>
         </div>
       </nav>
     </aside>
 
-    <!-- Right Workspace Stage -->
     <section class="main-stage">
       <header class="channel-header">
         <div class="channel-info">
@@ -65,13 +61,10 @@ import '../styles/medium.css';
       </header>
 
       <main class="chat-scroll-area">
-        <!-- Super Admin Control Deck (Only rendered for PIN 4999) -->
         <section id="superAdminDeck" class="super-admin-deck" style="display: none;">
           <div class="deck-title">🛡️ Super Admin User Authority (PIN: 4999)</div>
           <div id="adminUserRows"></div>
         </section>
-
-        <!-- Message List -->
         <div id="messagesFeed" style="display: flex; flex-direction: column; gap: 16px;"></div>
       </main>
 
@@ -85,18 +78,15 @@ import '../styles/medium.css';
   </div>
 
   <script is:inline>
-  // Cloudflare Worker URL (Replace with your actual deployed Worker URL)
   const WORKER_URL = 'https://convo-api.atityaramsureshmanickam.workers.dev';
 
   let currentPin = localStorage.getItem('convo_active_pin') || null;
   let currentUser = JSON.parse(localStorage.getItem('convo_user') || 'null');
 
-  // --- 1. LEFT SHIFT + 4999 TRACKING ENGINE ---
   let hiddenPin = '';
   let isLeftShiftHeld = false;
   let isValidSuperAdminAttempt = true;
 
-  // Track the exact physical Left Shift key
   window.addEventListener('keydown', (e) => {
     if (e.code === 'ShiftLeft') isLeftShiftHeld = true;
   });
@@ -108,102 +98,129 @@ import '../styles/medium.css';
   const nameInput = document.getElementById('nameInput');
   const newUserNameBlock = document.getElementById('newUserNameBlock');
   const btnLogin = document.getElementById('btnLogin');
+  const btnLogout = document.getElementById('btnLogout');
   const authOverlay = document.getElementById('authOverlay');
 
-  // Intercept keystrokes to bypass character mapping ($, (, etc.)
+  // Exit must be a real button action, not an inline onclick dependency.
+  btnLogout.addEventListener('click', handleLogout);
+
+  function handleLogout() {
+    // Clear every Convo session value so a refresh cannot restore the old portal session.
+    localStorage.removeItem('convo_active_pin');
+    localStorage.removeItem('convo_user');
+    sessionStorage.removeItem('convo_active_pin');
+    sessionStorage.removeItem('convo_user');
+
+    currentPin = null;
+    currentUser = null;
+    hiddenPin = '';
+    isValidSuperAdminAttempt = true;
+    isLeftShiftHeld = false;
+
+    // Reset the login UI for the next user.
+    pinInput.value = '';
+    nameInput.value = '';
+    newUserNameBlock.style.display = 'none';
+    btnLogin.textContent = 'Enter Portal';
+    authOverlay.style.display = 'flex';
+
+    const feed = document.getElementById('messagesFeed');
+    const channels = document.getElementById('channelNavList');
+    const deck = document.getElementById('superAdminDeck');
+    const userName = document.getElementById('userDisplayName');
+
+    if (feed) feed.replaceChildren();
+    if (channels) channels.replaceChildren();
+    if (deck) deck.style.display = 'none';
+    if (userName) userName.textContent = '';
+
+    pinInput.focus();
+  }
+
   pinInput.addEventListener('keydown', (e) => {
     if (e.key === 'Backspace') {
       hiddenPin = hiddenPin.slice(0, -1);
       pinInput.value = '•'.repeat(hiddenPin.length);
-      isValidSuperAdminAttempt = true; // reset on backspace
+      isValidSuperAdminAttempt = true;
       return;
     }
 
-    // Match physical number row (Digit0-9) or Numpad (Numpad0-9)
     const match = e.code.match(/^(Digit|Numpad)(\d)$/);
     if (match && hiddenPin.length < 4) {
-      e.preventDefault(); // Stop actual characters from typing
-      
+      e.preventDefault();
       const digit = match[2];
       hiddenPin += digit;
       pinInput.value = '•'.repeat(hiddenPin.length);
-
-      // If they type ANY digit without holding Left Shift, they fail the Super Admin test
-      if (!isLeftShiftHeld) {
-        isValidSuperAdminAttempt = false;
-      }
+      if (!isLeftShiftHeld) isValidSuperAdminAttempt = false;
     } else if (e.key !== 'Enter' && e.key !== 'Tab') {
-      e.preventDefault(); // Block letters and other symbols
+      e.preventDefault();
     }
   });
 
-  // --- 2. CLOUDFLARE AUTHENTICATION FLOW ---
-  btnLogin.addEventListener('click', async () => {
+  async function login() {
     if (hiddenPin.length !== 4) return alert('Enter a 4-digit PIN');
-    
+
     const name = nameInput.value.trim();
-    
-    // Determine if they successfully executed the secret Super Admin combo
-    const isSuperAdmin = (hiddenPin === '4999' && isValidSuperAdminAttempt);
+    const isSuperAdmin = hiddenPin === '4999' && isValidSuperAdminAttempt;
 
     try {
       btnLogin.textContent = 'Verifying...';
+      btnLogin.disabled = true;
+
       const res = await fetch(`${WORKER_URL}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          pin: hiddenPin, 
-          name: name,
-          isSuperAdmin: isSuperAdmin 
-        })
+        body: JSON.stringify({ pin: hiddenPin, name, isSuperAdmin })
       });
 
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Authentication failed');
 
-      // If PIN is new and no name was provided, reveal the name input
       if (data.isNew && !name && newUserNameBlock.style.display === 'none') {
         newUserNameBlock.style.display = 'block';
         btnLogin.textContent = 'Complete Registration';
+        btnLogin.disabled = false;
         alert('New PIN detected! Choose a display name to create your profile.');
+        nameInput.focus();
         return;
       }
 
-      // Success: Save session
       currentPin = hiddenPin;
       currentUser = data.user;
       localStorage.setItem('convo_active_pin', currentPin);
       localStorage.setItem('convo_user', JSON.stringify(currentUser));
-      
+
       authOverlay.style.display = 'none';
-      initApp(); // Start your chat UI
-      
+      initApp();
     } catch (err) {
       console.error(err);
-      alert('Failed to connect to authentication server.');
+      alert(err.message || 'Failed to connect to authentication server.');
       btnLogin.textContent = 'Enter Portal';
+    } finally {
+      btnLogin.disabled = false;
     }
+  }
+
+  btnLogin.addEventListener('click', login);
+  pinInput.addEventListener('keyup', (e) => {
+    if (e.key === 'Enter' && hiddenPin.length === 4) login();
+  });
+  nameInput.addEventListener('keyup', (e) => {
+    if (e.key === 'Enter') login();
   });
 
-  // --- 3. UI INITIALIZATION ---
   if (currentPin && currentUser) {
     authOverlay.style.display = 'none';
     initApp();
+  } else {
+    authOverlay.style.display = 'flex';
   }
 
   function initApp() {
-    document.getElementById('userDisplayName').textContent = currentUser.name;
-    
-    // Show/Hide Super Admin Deck based on validated role from Cloudflare
+    if (!currentUser) return;
+    document.getElementById('userDisplayName').textContent = currentUser.name || '';
     const deck = document.getElementById('superAdminDeck');
-    if (currentUser.role === 'superadmin') {
-      deck.style.display = 'block';
-    } else {
-      deck.style.display = 'none';
-    }
-
-    // Call functions to fetch channels and messages from Cloudflare here
-    // loadChannels();
-    // loadMessages();
+    deck.style.display = currentUser.role === 'superadmin' ? 'block' : 'none';
   }
 </script>
 </body>
