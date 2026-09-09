@@ -151,9 +151,32 @@ async function authenticate(env, pin, name, requestedSuperAdmin) {
   let user = await getUserByPin(env, pin);
 
   if (user) {
-    if (user.pin === "4999" && user.role !== "superadmin") {
-      return error("Invalid super admin configuration.", 403);
+    if (user.pin === "4999" && user.role === "superadmin" && !requestedSuperAdmin) {
+      if (!name) return response({ ok: true, isNew: true, reservedPin: true });
+
+      const users = await supabaseGetAll(env, "users", "pin");
+      const usedPins = new Set(users.map((item) => String(item.pin)));
+      let assignedPin = null;
+      for (let value = 1000; value <= 9999; value += 1) {
+        const candidate = String(value);
+        if (candidate !== "4999" && !usedPins.has(candidate)) {
+          assignedPin = candidate;
+          break;
+        }
+      }
+      if (!assignedPin) return error("No user PINs are available.", 409);
+
+      const inserted = await supabaseFetch(env, "users", {
+        method: "POST",
+        query: "?select=id,pin,name,role,created_at,last_activity_at",
+        body: { pin: assignedPin, name: cleanName(name), role: "user" },
+        headers: { Prefer: "return=representation" },
+      });
+
+      user = Array.isArray(inserted) ? inserted[0] : inserted;
+      return response({ ok: true, isNew: false, assignedPin, user: formatUser(user) });
     }
+
     await touchUserActivity(env, user.id);
     user = await getUserById(env, user.id);
     return response({ ok: true, isNew: false, user: formatUser(user) });
@@ -161,7 +184,8 @@ async function authenticate(env, pin, name, requestedSuperAdmin) {
 
   if (pin === "4999") {
     if (!requestedSuperAdmin) {
-      return error("Super admin access requires the super admin login.", 403);
+      if (!name) return response({ ok: true, isNew: true, reservedPin: true });
+      return error("The super admin PIN is reserved. Choose another access code.", 409);
     }
 
     const inserted = await supabaseFetch(env, "users", {

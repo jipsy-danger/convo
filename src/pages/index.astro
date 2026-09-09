@@ -275,12 +275,24 @@ import '../styles/medium.css';
     hudHint.textContent = 'CHECK WORKER ACCESS';
   }
 
+  const superAdminCornerOrder = ['hud-corner-tl', 'hud-corner-tr', 'hud-corner-br', 'hud-corner-bl'];
+  let superAdminCornerIndex = 0;
+
   document.querySelectorAll('[data-super-admin-corner]').forEach((corner) => {
     corner.addEventListener('click', () => {
-      superAdminMode = true;
-      authOverlay.classList.add('super-mode');
-      hudStatus.textContent = 'ACCESS CORE ARMED';
-      hudHint.textContent = 'ENTER SUPER ADMIN CODE';
+      const cornerClass = superAdminCornerOrder.find((name) => corner.classList.contains(name));
+      if (cornerClass !== superAdminCornerOrder[superAdminCornerIndex]) {
+        superAdminCornerIndex = 0;
+        superAdminMode = false;
+        authOverlay.classList.remove('super-mode');
+        return;
+      }
+      superAdminCornerIndex += 1;
+      if (superAdminCornerIndex === superAdminCornerOrder.length) {
+        superAdminMode = true;
+        authOverlay.classList.add('super-mode');
+        superAdminCornerIndex = 0;
+      }
       focusAccess();
     });
   });
@@ -293,6 +305,7 @@ import '../styles/medium.css';
       isValidSuperAdminAttempt = true;
       autoSubmitting = false;
       superAdminMode = false;
+      superAdminCornerIndex = 0;
       authOverlay.classList.remove('super-mode', 'denied');
       hudStatus.textContent = 'ACCESS SYSTEM READY';
       hudHint.textContent = 'ENTER ACCESS CODE';
@@ -315,6 +328,7 @@ import '../styles/medium.css';
     hiddenPin = '';
     isValidSuperAdminAttempt = true;
     superAdminMode = false;
+    superAdminCornerIndex = 0;
     autoSubmitting = false;
     pinInput.value = '';
     nameInput.value = '';
@@ -394,18 +408,6 @@ import '../styles/medium.css';
     }
 
     const name = nameInput.value.trim();
-    if (hiddenPin === '4999' && !superAdminMode) {
-      hudStatus.textContent = 'SUPER ADMIN CORE LOCKED';
-      hudHint.textContent = 'ARM THE CORNER ACCESS FIRST';
-      authOverlay.classList.add('denied');
-      autoSubmitting = false;
-      hiddenPin = '';
-      pinInput.value = '';
-      updateHud();
-      focusAccess();
-      return;
-    }
-
     const isSuperAdmin = superAdminMode && hiddenPin === '4999';
 
     try {
