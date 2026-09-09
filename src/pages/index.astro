@@ -438,15 +438,15 @@ import '../styles/medium.css';
         return;
       }
 
-      currentPin = hiddenPin;
+      currentPin = data.assignedPin || hiddenPin;
       currentUser = data.user;
       localStorage.setItem('convo_active_pin', currentPin);
       localStorage.setItem('convo_user', JSON.stringify(currentUser));
-      hudStatus.textContent = 'ACCESS GRANTED';
-      hudHint.textContent = isSuperAdmin ? 'SUPER ADMIN CORE ONLINE' : 'IDENTITY VERIFIED';
+      hudStatus.textContent = data.assignedPin ? 'IDENTITY CREATED' : 'ACCESS GRANTED';
+      hudHint.textContent = data.assignedPin ? `NEW PIN: ${data.assignedPin}` : (isSuperAdmin ? 'SUPER ADMIN CORE ONLINE' : 'IDENTITY VERIFIED');
       authOverlay.classList.remove('checking', 'denied');
       authOverlay.classList.add('granted');
-      setTimeout(() => { authOverlay.style.display = 'none'; initApp(); }, 360);
+      setTimeout(() => { authOverlay.style.display = 'none'; initApp(); }, data.assignedPin ? 1800 : 360);
     } catch (err) {
       console.error(err);
       hudStatus.textContent = 'ACCESS DENIED';
