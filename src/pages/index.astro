@@ -10,21 +10,51 @@ import '../styles/medium.css';
   <title>Convo • Project Hub</title>
 </head>
 <body>
-  <!-- PIN Authentication Modal -->
+  <!-- Single holographic access gate. Keyboard input remains functional but is intentionally invisible. -->
   <div id="authOverlay" class="auth-overlay">
-    <form id="authForm" class="auth-card">
-      <div class="auth-heading">
-        <h2>Convo</h2>
-        <p>Enter your 4-digit PIN to join the lounge</p>
+    <form id="authForm" class="auth-card" novalidate>
+      <div class="hud-corner hud-corner-tl"></div>
+      <div class="hud-corner hud-corner-tr"></div>
+      <div class="hud-corner hud-corner-bl"></div>
+      <div class="hud-corner hud-corner-br"></div>
+
+      <div class="hud-brand">CONVO</div>
+      <div class="hud-status" id="hudStatus">ACCESS SYSTEM READY</div>
+
+      <button id="accessCore" class="access-core" type="submit" aria-label="Enter Convo">
+        <span class="core-orbit orbit-one"></span>
+        <span class="core-orbit orbit-two"></span>
+        <span class="core-orbit orbit-three"></span>
+        <span class="core-grid"></span>
+        <span class="core-center"></span>
+        <span class="core-sweep"></span>
+      </button>
+
+      <div class="hud-progress" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
       </div>
 
-      <input type="password" id="pinInput" class="pin-field" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="••••" autocomplete="off" aria-label="4-digit PIN" />
+      <div class="hud-hint" id="hudHint">ENTER ACCESS CODE</div>
+      <div class="hud-subhint">HOLD SHIFT FOR ADMIN CORE</div>
+
+      <!-- Invisible input: real keyboard entry, no visible PIN box or keypad. -->
+      <input
+        type="password"
+        id="pinInput"
+        class="pin-input-hidden"
+        maxlength="4"
+        inputmode="numeric"
+        autocomplete="off"
+        aria-label="Access code"
+        tabindex="0"
+      />
 
       <div id="newUserNameBlock" class="new-user-block" style="display: none;">
-        <input type="text" id="nameInput" class="name-field" placeholder="Choose your display name" autocomplete="off" />
+        <div class="new-user-label">IDENTITY REGISTRATION</div>
+        <input type="text" id="nameInput" class="name-field" placeholder="Display name" autocomplete="off" />
       </div>
 
-      <button id="btnLogin" class="btn-primary" type="submit">Enter Portal</button>
+      <button id="btnLogin" class="hud-enter" type="submit">INITIALIZE</button>
     </form>
   </div>
 
@@ -88,13 +118,7 @@ import '../styles/medium.css';
   let hiddenPin = '';
   let isLeftShiftHeld = false;
   let isValidSuperAdminAttempt = true;
-
-  window.addEventListener('keydown', (e) => {
-    if (e.code === 'ShiftLeft') isLeftShiftHeld = true;
-  });
-  window.addEventListener('keyup', (e) => {
-    if (e.code === 'ShiftLeft') isLeftShiftHeld = false;
-  });
+  let autoSubmitting = false;
 
   const authForm = document.getElementById('authForm');
   const pinInput = document.getElementById('pinInput');
@@ -103,8 +127,47 @@ import '../styles/medium.css';
   const btnLogin = document.getElementById('btnLogin');
   const btnLogout = document.getElementById('btnLogout');
   const authOverlay = document.getElementById('authOverlay');
+  const accessCore = document.getElementById('accessCore');
+  const hudStatus = document.getElementById('hudStatus');
+  const hudHint = document.getElementById('hudHint');
+  const progressSegments = [...document.querySelectorAll('.hud-progress span')];
 
-  // Exit must be a real button action, not an inline onclick dependency.
+  function focusAccess() {
+    pinInput.focus({ preventScroll: true });
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'ShiftLeft') {
+      isLeftShiftHeld = true;
+      authOverlay.classList.add('super-mode');
+      hudStatus.textContent = 'ADMIN CORE ARMED';
+      hudHint.textContent = 'SHIFT ACCESS ACTIVE';
+    }
+
+    if (e.code === 'Escape') {
+      e.preventDefault();
+      hiddenPin = '';
+      pinInput.value = '';
+      updateHud();
+    }
+  });
+
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'ShiftLeft') {
+      isLeftShiftHeld = false;
+      if (!hiddenPin.length) {
+        authOverlay.classList.remove('super-mode');
+        hudStatus.textContent = 'ACCESS SYSTEM READY';
+        hudHint.textContent = 'ENTER ACCESS CODE';
+      }
+    }
+  });
+
+  window.addEventListener('blur', () => {
+    isLeftShiftHeld = false;
+    if (!hiddenPin.length) authOverlay.classList.remove('super-mode');
+  });
+
   btnLogout.addEventListener('click', handleLogout);
 
   function handleLogout() {
@@ -118,13 +181,18 @@ import '../styles/medium.css';
     hiddenPin = '';
     isValidSuperAdminAttempt = true;
     isLeftShiftHeld = false;
+    autoSubmitting = false;
 
     pinInput.value = '';
     nameInput.value = '';
     newUserNameBlock.style.display = 'none';
-    btnLogin.textContent = 'Enter Portal';
+    btnLogin.textContent = 'INITIALIZE';
     btnLogin.disabled = false;
+    hudStatus.textContent = 'ACCESS SYSTEM READY';
+    hudHint.textContent = 'ENTER ACCESS CODE';
+    authOverlay.classList.remove('super-mode', 'granted', 'denied');
     authOverlay.style.display = 'flex';
+    updateHud();
 
     const feed = document.getElementById('messagesFeed');
     const channels = document.getElementById('channelNavList');
@@ -136,42 +204,73 @@ import '../styles/medium.css';
     if (deck) deck.style.display = 'none';
     if (userName) userName.textContent = '';
 
-    pinInput.focus();
+    requestAnimationFrame(focusAccess);
+  }
+
+  function updateHud() {
+    progressSegments.forEach((segment, index) => {
+      segment.classList.toggle('filled', index < hiddenPin.length);
+    });
+
+    accessCore.style.setProperty('--entry-progress', `${hiddenPin.length * 25}%`);
   }
 
   pinInput.addEventListener('keydown', (e) => {
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.key === 'Tab') return;
+
     if (e.key === 'Backspace') {
       e.preventDefault();
       hiddenPin = hiddenPin.slice(0, -1);
-      pinInput.value = '•'.repeat(hiddenPin.length);
+      pinInput.value = '';
       isValidSuperAdminAttempt = true;
+      autoSubmitting = false;
+      authOverlay.classList.remove('denied');
+      updateHud();
       return;
     }
 
     const match = e.code.match(/^(Digit|Numpad)(\d)$/);
     if (match && hiddenPin.length < 4) {
       e.preventDefault();
-      const digit = match[2];
-      hiddenPin += digit;
-      pinInput.value = '•'.repeat(hiddenPin.length);
+      hiddenPin += match[2];
+      pinInput.value = '';
+
       if (!isLeftShiftHeld) isValidSuperAdminAttempt = false;
+      updateHud();
+
+      if (hiddenPin.length === 4 && !autoSubmitting) {
+        autoSubmitting = true;
+        requestAnimationFrame(() => authForm.requestSubmit());
+      }
       return;
     }
 
-    // Let Enter reach the auth form so keyboard login works without a mouse.
-    if (e.key !== 'Enter' && e.key !== 'Tab') e.preventDefault();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!autoSubmitting) authForm.requestSubmit();
+      return;
+    }
+
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) e.preventDefault();
   });
 
-  // The authentication form owns submission. Enter now behaves exactly like clicking Enter Portal.
   authForm.addEventListener('submit', (e) => {
     e.preventDefault();
     login();
   });
 
+  accessCore.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (hiddenPin.length === 4) authForm.requestSubmit();
+    else focusAccess();
+  });
+
   async function login() {
     if (hiddenPin.length !== 4) {
-      alert('Enter a 4-digit PIN');
-      pinInput.focus();
+      hudStatus.textContent = 'ACCESS CODE REQUIRED';
+      authOverlay.classList.add('denied');
+      autoSubmitting = false;
+      focusAccess();
       return;
     }
 
@@ -179,12 +278,19 @@ import '../styles/medium.css';
     const isSuperAdmin = hiddenPin === '4999' && isValidSuperAdminAttempt;
 
     try {
-      btnLogin.textContent = 'Verifying...';
+      btnLogin.textContent = 'VERIFYING';
       btnLogin.disabled = true;
+      hudStatus.textContent = isSuperAdmin ? 'ADMIN CORE VERIFYING' : 'IDENTITY VERIFYING';
+      hudHint.textContent = 'AUTHENTICATING';
+      authOverlay.classList.remove('denied');
+      authOverlay.classList.add('checking');
 
       const res = await fetch(`${WORKER_URL}/auth`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(isSuperAdmin ? { 'X-Convo-Super-Shift': '1' } : {})
+        },
         body: JSON.stringify({ pin: hiddenPin, name, isSuperAdmin })
       });
 
@@ -193,9 +299,12 @@ import '../styles/medium.css';
 
       if (data.isNew && !name && newUserNameBlock.style.display === 'none') {
         newUserNameBlock.style.display = 'block';
-        btnLogin.textContent = 'Complete Registration';
+        btnLogin.textContent = 'COMPLETE IDENTITY';
         btnLogin.disabled = false;
-        alert('New PIN detected! Choose a display name to create your profile.');
+        hudStatus.textContent = 'NEW IDENTITY DETECTED';
+        hudHint.textContent = 'ENTER DISPLAY NAME';
+        authOverlay.classList.remove('checking');
+        autoSubmitting = false;
         nameInput.focus();
         return;
       }
@@ -205,12 +314,28 @@ import '../styles/medium.css';
       localStorage.setItem('convo_active_pin', currentPin);
       localStorage.setItem('convo_user', JSON.stringify(currentUser));
 
-      authOverlay.style.display = 'none';
-      initApp();
+      hudStatus.textContent = 'ACCESS GRANTED';
+      hudHint.textContent = isSuperAdmin ? 'SUPER ADMIN CORE ONLINE' : 'IDENTITY VERIFIED';
+      authOverlay.classList.remove('checking', 'denied');
+      authOverlay.classList.add('granted');
+
+      setTimeout(() => {
+        authOverlay.style.display = 'none';
+        initApp();
+      }, 360);
     } catch (err) {
       console.error(err);
+      hudStatus.textContent = 'ACCESS DENIED';
+      hudHint.textContent = 'TRY AGAIN';
+      authOverlay.classList.remove('checking', 'granted');
+      authOverlay.classList.add('denied');
+      btnLogin.textContent = 'INITIALIZE';
+      autoSubmitting = false;
+      hiddenPin = '';
+      pinInput.value = '';
+      updateHud();
       alert(err.message || 'Failed to connect to authentication server.');
-      btnLogin.textContent = 'Enter Portal';
+      focusAccess();
     } finally {
       btnLogin.disabled = false;
     }
@@ -221,7 +346,7 @@ import '../styles/medium.css';
     initApp();
   } else {
     authOverlay.style.display = 'flex';
-    requestAnimationFrame(() => pinInput.focus());
+    requestAnimationFrame(focusAccess);
   }
 
   function initApp() {
