@@ -705,3 +705,25 @@ body {
   background: rgba(239,68,68,.10);
   color: #fecaca;
 }
+
+/* Keep application text crisp; preserve the 3D HUD look with lighting and shadows. */
+.app-layout { perspective: none; transform-style: flat; }
+.app-layout::before { transform: none; }
+.sidebar { transform: none; transform-style: flat; }
+.brand-section,
+.nav-groups { transform: none; }
+.brand-logo { transform: none; }
+.channel-list > * { transform: none; }
+.channel-list > *:hover { transform: translateY(-2px); }
+.main-stage { transform: none; transform-style: flat; }
+.channel-header { transform: none; transform-style: flat; }
+.channel-info,
+.header-actions { transform: none; }
+#messagesFeed > * { transform: none; transform-style: flat; }
+#messagesFeed > *:hover { transform: translateY(-3px); }
+.super-admin-deck { transform: none; transform-style: flat; }
+.input-dock { transform: none; transform-style: flat; }
+.btn-send:hover,
+.btn-ctrl:hover,
+.btn-add-group:hover,
+.logout-link:hover { transform: translateY(-2px); }
