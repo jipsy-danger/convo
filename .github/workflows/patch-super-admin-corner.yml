@@ -23,56 +23,85 @@ jobs:
           page = Path('src/pages/index.astro')
           s = page.read_text()
 
-          replacements = [
-              ('<div class="hud-corner hud-corner-tl"></div>', '<button class="hud-corner hud-corner-tl" data-super-admin-corner type="button" aria-label="Arm super admin access"></button>'),
-              ('<div class="hud-corner hud-corner-tr"></div>', '<button class="hud-corner hud-corner-tr" data-super-admin-corner type="button" aria-label="Arm super admin access"></button>'),
-              ('<div class="hud-corner hud-corner-bl"></div>', '<button class="hud-corner hud-corner-bl" data-super-admin-corner type="button" aria-label="Arm super admin access"></button>'),
-              ('<div class="hud-corner hud-corner-br"></div>', '<button class="hud-corner hud-corner-br" data-super-admin-corner type="button" aria-label="Arm super admin access"></button>'),
-              ('  let isLeftShiftHeld = false;\n', '  let superAdminMode = false;\n'),
-          ]
-          for old, new in replacements:
-              if old not in s:
-                  raise SystemExit(f'missing expected text: {old}')
-              s = s.replace(old, new, 1)
+          old = '''  const superAdminCornerOrder = ['hud-corner-tl', 'hud-corner-tr', 'hud-corner-br', 'hud-corner-bl'];
+  let superAdminCornerIndex = 0;
 
-          old = '''  window.addEventListener('keydown', (e) => {\n    if (e.code === 'ShiftLeft') {\n      isLeftShiftHeld = true;\n      authOverlay.classList.add('super-mode');\n      hudStatus.textContent = 'ACCESS CORE ARMED';\n      hudHint.textContent = 'ENTER ACCESS CODE';\n    }\n    if (e.code === 'Escape') {\n      e.preventDefault();\n      hiddenPin = '';\n      pinInput.value = '';\n      isValidSuperAdminAttempt = true;\n      autoSubmitting = false;\n      authOverlay.classList.remove('super-mode', 'denied');\n      hudStatus.textContent = 'ACCESS SYSTEM READY';\n      hudHint.textContent = 'ENTER ACCESS CODE';\n      updateHud();\n    }\n  });\n\n  window.addEventListener('keyup', (e) => {\n    if (e.code === 'ShiftLeft') {\n      isLeftShiftHeld = false;\n      if (!hiddenPin.length) authOverlay.classList.remove('super-mode');\n    }\n  });\n\n  window.addEventListener('blur', () => {\n    isLeftShiftHeld = false;\n    if (!hiddenPin.length) authOverlay.classList.remove('super-mode');\n  });\n'''
-          new = '''  document.querySelectorAll('[data-super-admin-corner]').forEach((corner) => {\n    corner.addEventListener('click', () => {\n      superAdminMode = true;\n      authOverlay.classList.add('super-mode');\n      hudStatus.textContent = 'ACCESS CORE ARMED';\n      hudHint.textContent = 'ENTER SUPER ADMIN CODE';\n      focusAccess();\n    });\n  });\n\n  window.addEventListener('keydown', (e) => {\n    if (e.code === 'Escape') {\n      e.preventDefault();\n      hiddenPin = '';\n      pinInput.value = '';\n      isValidSuperAdminAttempt = true;\n      autoSubmitting = false;\n      superAdminMode = false;\n      authOverlay.classList.remove('super-mode', 'denied');\n      hudStatus.textContent = 'ACCESS SYSTEM READY';\n      hudHint.textContent = 'ENTER ACCESS CODE';\n      updateHud();\n    }\n  });\n'''
+  document.querySelectorAll('[data-super-admin-corner]').forEach((corner) => {
+    corner.addEventListener('click', () => {
+      const cornerClass = superAdminCornerOrder.find((name) => corner.classList.contains(name));
+      if (cornerClass !== superAdminCornerOrder[superAdminCornerIndex]) {
+        superAdminCornerIndex = 0;
+        superAdminMode = false;
+        authOverlay.classList.remove('super-mode');
+        return;
+      }
+      superAdminCornerIndex += 1;
+      if (superAdminCornerIndex === superAdminCornerOrder.length) {
+        superAdminMode = true;
+        authOverlay.classList.add('super-mode');
+        superAdminCornerIndex = 0;
+      }
+      focusAccess();
+    });
+  });
+'''
+          new = '''  let superAdminCornerTarget = null;
+  let superAdminCornerCount = 0;
+
+  function resetSuperAdminArming() {
+    superAdminCornerTarget = null;
+    superAdminCornerCount = 0;
+    superAdminMode = false;
+    authOverlay.classList.remove('super-mode');
+  }
+
+  document.querySelectorAll('[data-super-admin-corner]').forEach((corner) => {
+    corner.addEventListener('click', () => {
+      if (superAdminMode) {
+        focusAccess();
+        return;
+      }
+
+      if (superAdminCornerTarget !== corner) {
+        superAdminCornerTarget = corner;
+        superAdminCornerCount = 1;
+      } else {
+        superAdminCornerCount += 1;
+      }
+
+      if (superAdminCornerCount === 4) {
+        superAdminMode = true;
+        authOverlay.classList.add('super-mode');
+        superAdminCornerTarget = null;
+        superAdminCornerCount = 0;
+      }
+
+      focusAccess();
+    });
+  });
+'''
           if old not in s:
-              raise SystemExit('missing expected Shift access block')
+              raise SystemExit('missing expected four-corner sequence')
           s = s.replace(old, new, 1)
 
-          old = "      if (!isLeftShiftHeld) isValidSuperAdminAttempt = false;\n"
-          new = "      isValidSuperAdminAttempt = superAdminMode ? hiddenPin === '4999' : true;\n"
-          if old not in s:
-              raise SystemExit('missing expected Shift validation line')
-          s = s.replace(old, new, 1)
+          old = '      superAdminCornerIndex = 0;\n'
+          if old in s:
+              s = s.replace(old, '      resetSuperAdminArming();\n', 1)
+          else:
+              raise SystemExit('missing expected Escape corner state')
 
-          old = "    const isSuperAdmin = hiddenPin === '4999';\n"
-          new = "    if (hiddenPin === '4999' && !superAdminMode) {\n      hudStatus.textContent = 'SUPER ADMIN CORE LOCKED';\n      hudHint.textContent = 'ARM THE CORNER ACCESS FIRST';\n      authOverlay.classList.add('denied');\n      autoSubmitting = false;\n      hiddenPin = '';\n      pinInput.value = '';\n      updateHud();\n      focusAccess();\n      return;\n    }\n\n    const isSuperAdmin = superAdminMode && hiddenPin === '4999';\n"
-          if old not in s:
-              raise SystemExit('missing expected super admin line')
-          s = s.replace(old, new, 1)
-
-          old = '    isLeftShiftHeld = false;\n'
-          new = '    superAdminMode = false;\n'
-          if old not in s:
-              raise SystemExit('missing expected logout Shift state')
-          s = s.replace(old, new, 1)
+          old = '    superAdminCornerIndex = 0;\n'
+          if old in s:
+              s = s.replace(old, '    resetSuperAdminArming();\n', 1)
+          else:
+              raise SystemExit('missing expected logout corner state')
 
           page.write_text(s)
-
-          css = Path('src/styles/medium.css')
-          c = css.read_text()
-          old = '''.hud-corner {\n  position: absolute;\n  width: 48px;\n  height: 48px;\n  border-color: rgba(56, 189, 248, .42);\n  border-style: solid;\n  opacity: .75;\n}'''
-          new = '''.hud-corner {\n  position: absolute;\n  width: 48px;\n  height: 48px;\n  padding: 0;\n  border-color: rgba(56, 189, 248, .42);\n  border-style: solid;\n  background: transparent;\n  opacity: .75;\n  cursor: pointer;\n}'''
-          if old not in c:
-              raise SystemExit('missing expected hud-corner CSS')
-          css.write_text(c.replace(old, new, 1))
           PY
       - name: Commit patch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/pages/index.astro src/styles/medium.css
-          git commit -m "Use corner click for super admin access"
+          git add src/pages/index.astro
+          git commit -m "Replace corner sequence with four-click super admin access"
           git push origin main
