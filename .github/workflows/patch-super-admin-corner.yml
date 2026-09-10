@@ -15,93 +15,72 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Patch corner access
+        shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           page = Path('src/pages/index.astro')
           s = page.read_text()
 
-          old = '''  const superAdminCornerOrder = ['hud-corner-tl', 'hud-corner-tr', 'hud-corner-br', 'hud-corner-bl'];
-  let superAdminCornerIndex = 0;
+          pattern = r"  const superAdminCornerOrder = \['hud-corner-tl', 'hud-corner-tr', 'hud-corner-br', 'hud-corner-bl'\];.*?  \}\);\n  \}\);\n"
+          replacement = '''  let superAdminCornerTarget = null;
+          let superAdminCornerCount = 0;
 
-  document.querySelectorAll('[data-super-admin-corner]').forEach((corner) => {
-    corner.addEventListener('click', () => {
-      const cornerClass = superAdminCornerOrder.find((name) => corner.classList.contains(name));
-      if (cornerClass !== superAdminCornerOrder[superAdminCornerIndex]) {
-        superAdminCornerIndex = 0;
-        superAdminMode = false;
-        authOverlay.classList.remove('super-mode');
-        return;
-      }
-      superAdminCornerIndex += 1;
-      if (superAdminCornerIndex === superAdminCornerOrder.length) {
-        superAdminMode = true;
-        authOverlay.classList.add('super-mode');
-        superAdminCornerIndex = 0;
-      }
-      focusAccess();
-    });
-  });
+          function resetSuperAdminArming() {
+            superAdminCornerTarget = null;
+            superAdminCornerCount = 0;
+            superAdminMode = false;
+            authOverlay.classList.remove('super-mode');
+          }
+
+          document.querySelectorAll('[data-super-admin-corner]').forEach((corner) => {
+            corner.addEventListener('click', () => {
+              if (superAdminMode) {
+                focusAccess();
+                return;
+              }
+
+              if (superAdminCornerTarget !== corner) {
+                superAdminCornerTarget = corner;
+                superAdminCornerCount = 1;
+              } else {
+                superAdminCornerCount += 1;
+              }
+
+              if (superAdminCornerCount === 4) {
+                superAdminMode = true;
+                authOverlay.classList.add('super-mode');
+                superAdminCornerTarget = null;
+                superAdminCornerCount = 0;
+              }
+
+              focusAccess();
+            });
+          });
 '''
-          new = '''  let superAdminCornerTarget = null;
-  let superAdminCornerCount = 0;
-
-  function resetSuperAdminArming() {
-    superAdminCornerTarget = null;
-    superAdminCornerCount = 0;
-    superAdminMode = false;
-    authOverlay.classList.remove('super-mode');
-  }
-
-  document.querySelectorAll('[data-super-admin-corner]').forEach((corner) => {
-    corner.addEventListener('click', () => {
-      if (superAdminMode) {
-        focusAccess();
-        return;
-      }
-
-      if (superAdminCornerTarget !== corner) {
-        superAdminCornerTarget = corner;
-        superAdminCornerCount = 1;
-      } else {
-        superAdminCornerCount += 1;
-      }
-
-      if (superAdminCornerCount === 4) {
-        superAdminMode = true;
-        authOverlay.classList.add('super-mode');
-        superAdminCornerTarget = null;
-        superAdminCornerCount = 0;
-      }
-
-      focusAccess();
-    });
-  });
-'''
-          if old not in s:
+          s2, count = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          if count != 1:
               raise SystemExit('missing expected four-corner sequence')
-          s = s.replace(old, new, 1)
+          s = s2
 
-          old = '      superAdminCornerIndex = 0;\n'
-          if old in s:
-              s = s.replace(old, '      resetSuperAdminArming();\n', 1)
-          else:
-              raise SystemExit('missing expected Escape corner state')
+          s = s.replace('      superAdminMode = false;\n      superAdminCornerIndex = 0;\n', '      resetSuperAdminArming();\n', 1)
+          s = s.replace('    superAdminMode = false;\n    superAdminCornerIndex = 0;\n', '    resetSuperAdminArming();\n', 1)
 
-          old = '    superAdminCornerIndex = 0;\n'
-          if old in s:
-              s = s.replace(old, '    resetSuperAdminArming();\n', 1)
-          else:
-              raise SystemExit('missing expected logout corner state')
+          if 'superAdminCornerIndex' in s or 'superAdminCornerOrder' in s:
+              raise SystemExit('old corner state remains')
 
           page.write_text(s)
           PY
+
       - name: Commit patch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/pages/index.astro
+          git diff --cached --quiet && exit 0
           git commit -m "Replace corner sequence with four-click super admin access"
           git push origin main
