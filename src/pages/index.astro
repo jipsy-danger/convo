@@ -275,24 +275,37 @@ import '../styles/medium.css';
     hudHint.textContent = 'CHECK WORKER ACCESS';
   }
 
-  const superAdminCornerOrder = ['hud-corner-tl', 'hud-corner-tr', 'hud-corner-br', 'hud-corner-bl'];
-  let superAdminCornerIndex = 0;
+  let superAdminCornerTarget = null;
+  let superAdminCornerCount = 0;
+
+  function resetSuperAdminArming() {
+    superAdminCornerTarget = null;
+    superAdminCornerCount = 0;
+    superAdminMode = false;
+    authOverlay.classList.remove('super-mode');
+  }
 
   document.querySelectorAll('[data-super-admin-corner]').forEach((corner) => {
     corner.addEventListener('click', () => {
-      const cornerClass = superAdminCornerOrder.find((name) => corner.classList.contains(name));
-      if (cornerClass !== superAdminCornerOrder[superAdminCornerIndex]) {
-        superAdminCornerIndex = 0;
-        superAdminMode = false;
-        authOverlay.classList.remove('super-mode');
+      if (superAdminMode) {
+        focusAccess();
         return;
       }
-      superAdminCornerIndex += 1;
-      if (superAdminCornerIndex === superAdminCornerOrder.length) {
+
+      if (superAdminCornerTarget !== corner) {
+        superAdminCornerTarget = corner;
+        superAdminCornerCount = 1;
+      } else {
+        superAdminCornerCount += 1;
+      }
+
+      if (superAdminCornerCount === 4) {
         superAdminMode = true;
         authOverlay.classList.add('super-mode');
-        superAdminCornerIndex = 0;
+        superAdminCornerTarget = null;
+        superAdminCornerCount = 0;
       }
+
       focusAccess();
     });
   });
@@ -304,8 +317,7 @@ import '../styles/medium.css';
       pinInput.value = '';
       isValidSuperAdminAttempt = true;
       autoSubmitting = false;
-      superAdminMode = false;
-      superAdminCornerIndex = 0;
+      resetSuperAdminArming();
       authOverlay.classList.remove('super-mode', 'denied');
       hudStatus.textContent = 'ACCESS SYSTEM READY';
       hudHint.textContent = 'ENTER ACCESS CODE';
@@ -327,8 +339,7 @@ import '../styles/medium.css';
     activeChannel = null;
     hiddenPin = '';
     isValidSuperAdminAttempt = true;
-    superAdminMode = false;
-    superAdminCornerIndex = 0;
+    resetSuperAdminArming();
     autoSubmitting = false;
     pinInput.value = '';
     nameInput.value = '';
