@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   patch:
-    if: contains(github.event.head_commit.message, 'Install temporary corner access patch')
+    if: ${{ github.event.head_commit.message != 'Replace corner sequence with four-click super admin access' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +25,9 @@ jobs:
 
           page = Path('src/pages/index.astro')
           s = page.read_text()
+
+          if 'superAdminCornerTarget' in s and 'superAdminCornerCount' in s:
+              raise SystemExit(0)
 
           pattern = r"  const superAdminCornerOrder = \['hud-corner-tl', 'hud-corner-tr', 'hud-corner-br', 'hud-corner-bl'\];.*?  \}\);\n  \}\);\n"
           replacement = '''  let superAdminCornerTarget = null;
@@ -62,10 +65,9 @@ jobs:
             });
           });
 '''
-          s2, count = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          s, count = re.subn(pattern, replacement, s, count=1, flags=re.S)
           if count != 1:
               raise SystemExit('missing expected four-corner sequence')
-          s = s2
 
           s = s.replace('      superAdminMode = false;\n      superAdminCornerIndex = 0;\n', '      resetSuperAdminArming();\n', 1)
           s = s.replace('    superAdminMode = false;\n    superAdminCornerIndex = 0;\n', '    resetSuperAdminArming();\n', 1)
