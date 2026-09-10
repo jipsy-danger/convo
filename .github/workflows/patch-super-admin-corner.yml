@@ -2,7 +2,8 @@ name: Apply super admin corner access
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -17,72 +18,20 @@ jobs:
           fetch-depth: 0
 
       - name: Patch corner access
-        shell: bash
+        env:
+          OLD_BLOCK: ICBjb25zdCBzdXBlckFkbWluQ29ybmVyT3JkZXIgPSBbJ2h1ZC1jb3JuZXItdGwnLCAnaHVkLWNvcm5lci10cicsICdodWQtY29ybmVyLWJyJywgJ2h1ZC1jb3JuZXItYmwnXTsKICBsZXQgc3VwZXJBZG1pbkNvcm5lckluZGV4ID0gMDsKCiAgZG9jdW1lbnQucXVlcnlTZWxlY3RvckFsbCgnW2RhdGEtc3VwZXItYWRtaW4tY29ybmVyXScpLmZvckVhY2goKGNvcm5lcikgPT4gewogICAgY29ybmVyLmFkZEV2ZW50TGlzdGVuZXIoJ2NsaWNrJywgKCkgPT4gewogICAgICBjb25zdCBjb3JuZXJDbGFzcyA9IHN1cGVyQWRtaW5Db3JuZXJPcmRlci5maW5kKChuYW1lKSA9PiBjb3JuZXIuY2xhc3NMaXN0LmNvbnRhaW5zKG5hbWUpKTsKICAgICAgaWYgKGNvcm5lckNsYXNzICE9PSBzdXBlckFkbWluQ29ybmVyT3JkZXJbc3VwZXJBZG1pbkNvcm5lckluZGV4XSkgewogICAgICAgIHN1cGVyQWRtaW5Db3JuZXJJbmRleCA9IDA7CiAgICAgICAgc3VwZXJBZG1pbk1vZGUgPSBmYWxzZTsKICAgICAgICBhdXRoT3ZlcmxheS5jbGFzc0xpc3QucmVtb3ZlKCdzdXBlci1tb2RlJyk7CiAgICAgICAgcmV0dXJuOwogICAgICB9CiAgICAgIHN1cGVyQWRtaW5Db3JuZXJJbmRleCArPSAxOwogICAgICBpZiAoc3VwZXJBZG1pbkNvcm5lckluZGV4ID09PSBzdXBlckFkbWluQ29ybmVyT3JkZXIubGVuZ3RoKSB7CiAgICAgICAgc3VwZXJBZG1pbk1vZGUgPSB0cnVlOwogICAgICAgIGF1dGhPdmVybGF5LmNsYXNzTGlzdC5hZGQoJ3N1cGVyLW1vZGUnKTsKICAgICAgICBzdXBlckFkbWluQ29ybmVySW5kZXggPSAwOwogICAgICB9CiAgICAgIGZvY3VzQWNjZXNzKCk7CiAgICB9KTsKICB9KTsK
+          NEW_BLOCK: ICBsZXQgc3VwZXJBZG1pbkNvcm5lclRhcmdldCA9IG51bGw7CiAgbGV0IHN1cGVyQWRtaW5Db3JuZXJDb3VudCA9IDA7CgogIGZ1bmN0aW9uIHJlc2V0U3VwZXJBZG1pbkFybWluZygpIHsKICAgIHN1cGVyQWRtaW5Db3JuZXJUYXJnZXQgPSBudWxsOwogICAgc3VwZXJBZG1pbkNvcm5lckNvdW50ID0gMDsKICAgIHN1cGVyQWRtaW5Nb2RlID0gZmFsc2U7CiAgICBhdXRoT3ZlcmxheS5jbGFzc0xpc3QucmVtb3ZlKCdzdXBlci1tb2RlJyk7CiAgfQoKICBkb2N1bWVudC5xdWVyeVNlbGVjdG9yQWxsKCdbZGF0YS1zdXBlci1hZG1pbi1jb3JuZXJdJykuZm9yRWFjaCgoY29ybmVyKSA9PiB7CiAgICBjb3JuZXIuYWRkRXZlbnRMaXN0ZW5lcignY2xpY2snLCAoKSA9PiB7CiAgICAgIGlmIChzdXBlckFkbWluTW9kZSkgewogICAgICAgIGZvY3VzQWNjZXNzKCk7CiAgICAgICAgcmV0dXJuOwogICAgICB9CgogICAgICBpZiAoc3VwZXJBZG1pbkNvcm5lclRhcmdldCAhPT0gY29ybmVyKSB7CiAgICAgICAgc3VwZXJBZG1pbkNvcm5lclRhcmdldCA9IGNvcm5lcjsKICAgICAgICBzdXBlckFkbWluQ29ybmVyQ291bnQgPSAxOwogICAgICB9IGVsc2UgewogICAgICAgIHN1cGVyQWRtaW5Db3JuZXJDb3VudCArPSAxOwogICAgICB9CgogICAgICBpZiAoc3VwZXJBZG1pbkNvcm5lckNvdW50ID09PSA0KSB7CiAgICAgICAgc3VwZXJBZG1pbk1vZGUgPSB0cnVlOwogICAgICAgIGF1dGhPdmVybGF5LmNsYXNzTGlzdC5hZGQoJ3N1cGVyLW1vZGUnKTsKICAgICAgICBzdXBlckFkbWluQ29ybmVyVGFyZ2V0ID0gbnVsbDsKICAgICAgICBzdXBlckFkbWluQ29ybmVyQ291bnQgPSAwOwogICAgICB9CgogICAgICBmb2N1c0FjY2VzcygpOwogICAgfSk7CiAgfSk7Cg==
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
+          python -c "import os,base64; from pathlib import Path; p=Path('src/pages/index.astro'); s=p.read_text(); old=base64.b64decode(os.environ['OLD_BLOCK']).decode(); new=base64.b64decode(os.environ['NEW_BLOCK']).decode(); assert old in s, 'missing expected corner sequence'; s=s.replace(old,new,1); s=s.replace('      superAdminMode = false;\\n      superAdminCornerIndex = 0;\\n','      resetSuperAdminArming();\\n',1); s=s.replace('    superAdminMode = false;\\n    superAdminCornerIndex = 0;\\n','    resetSuperAdminArming();\\n',1); assert 'superAdminCornerIndex' not in s and 'superAdminCornerOrder' not in s; p.write_text(s)"
+          grep -q "let superAdminCornerTarget = null;" src/pages/index.astro
+          grep -q "let superAdminCornerCount = 0;" src/pages/index.astro
+          grep -q "if (superAdminCornerCount === 4)" src/pages/index.astro
 
-          page = Path('src/pages/index.astro')
-          s = page.read_text()
-
-          if 'superAdminCornerTarget' in s and 'superAdminCornerCount' in s:
-              raise SystemExit(0)
-
-          pattern = r"  const superAdminCornerOrder = \['hud-corner-tl', 'hud-corner-tr', 'hud-corner-br', 'hud-corner-bl'\];.*?  \}\);\n  \}\);\n"
-          replacement = '''  let superAdminCornerTarget = null;
-          let superAdminCornerCount = 0;
-
-          function resetSuperAdminArming() {
-            superAdminCornerTarget = null;
-            superAdminCornerCount = 0;
-            superAdminMode = false;
-            authOverlay.classList.remove('super-mode');
-          }
-
-          document.querySelectorAll('[data-super-admin-corner]').forEach((corner) => {
-            corner.addEventListener('click', () => {
-              if (superAdminMode) {
-                focusAccess();
-                return;
-              }
-
-              if (superAdminCornerTarget !== corner) {
-                superAdminCornerTarget = corner;
-                superAdminCornerCount = 1;
-              } else {
-                superAdminCornerCount += 1;
-              }
-
-              if (superAdminCornerCount === 4) {
-                superAdminMode = true;
-                authOverlay.classList.add('super-mode');
-                superAdminCornerTarget = null;
-                superAdminCornerCount = 0;
-              }
-
-              focusAccess();
-            });
-          });
-'''
-          s, count = re.subn(pattern, replacement, s, count=1, flags=re.S)
-          if count != 1:
-              raise SystemExit('missing expected four-corner sequence')
-
-          s = s.replace('      superAdminMode = false;\n      superAdminCornerIndex = 0;\n', '      resetSuperAdminArming();\n', 1)
-          s = s.replace('    superAdminMode = false;\n    superAdminCornerIndex = 0;\n', '    resetSuperAdminArming();\n', 1)
-
-          if 'superAdminCornerIndex' in s or 'superAdminCornerOrder' in s:
-              raise SystemExit('old corner state remains')
-
-          page.write_text(s)
-          PY
-
-      - name: Commit patch
+      - name: Commit source patch and remove temporary workflow
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/patch-super-admin-corner.yml
           git add src/pages/index.astro
-          git diff --cached --quiet && exit 0
           git commit -m "Replace corner sequence with four-click super admin access"
           git push origin main
