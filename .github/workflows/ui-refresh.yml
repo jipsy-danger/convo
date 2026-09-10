@@ -1,0 +1,329 @@
+name: Apply Convo command-deck UI
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  refresh:
+    if: github.event.head_commit.message != 'Refresh Convo command-deck UI'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply visual refresh
+        run: |
+          cat >> src/styles/medium.css <<'CSS'
+
+          /* CONVO COMMAND-DECK UI — visual-only refresh */
+          :root {
+            --bg-dark: #02070c;
+            --bg-sidebar: rgba(3, 12, 20, .92);
+            --bg-card: rgba(7, 20, 31, .72);
+            --bg-input: rgba(2, 10, 16, .88);
+            --text-main: #eefbff;
+            --text-muted: #78a9bb;
+            --text-subtle: #3f6575;
+            --border: rgba(65, 203, 235, .14);
+            --border-focus: #35d7ff;
+            --accent-blue: #20a8ff;
+            --accent-cyan: #32e4ff;
+            --accent-amber: #ffad3d;
+            --accent-glow: rgba(32, 168, 255, .24);
+          }
+
+          html, body { background: #02070c; }
+          body {
+            background-image:
+              radial-gradient(circle at 76% 14%, rgba(255, 157, 55, .055), transparent 24%),
+              radial-gradient(circle at 48% 58%, rgba(0, 191, 255, .09), transparent 34%),
+              linear-gradient(180deg, #02070c 0%, #031019 52%, #01050a 100%);
+            font-family: var(--font-sans);
+          }
+
+          body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            opacity: .34;
+            background-image:
+              linear-gradient(rgba(54, 213, 255, .026) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(54, 213, 255, .026) 1px, transparent 1px);
+            background-size: 42px 42px;
+            mask-image: linear-gradient(to bottom, black, transparent 92%);
+          }
+
+          .app-layout {
+            position: relative;
+            grid-template-columns: 292px minmax(0, 1fr);
+            background:
+              linear-gradient(90deg, rgba(8, 44, 61, .22), transparent 18%, transparent 82%, rgba(8, 44, 61, .18));
+            border: 1px solid rgba(49, 185, 219, .10);
+            box-shadow: inset 0 0 90px rgba(0, 0, 0, .32);
+          }
+
+          .app-layout::after {
+            content: '';
+            position: absolute;
+            right: 16px;
+            top: 18px;
+            bottom: 18px;
+            width: 226px;
+            pointer-events: none;
+            border: 1px solid rgba(48, 196, 231, .13);
+            background:
+              linear-gradient(180deg, rgba(9, 30, 42, .52), rgba(2, 11, 17, .30)),
+              linear-gradient(rgba(48, 196, 231, .025) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(48, 196, 231, .025) 1px, transparent 1px);
+            background-size: auto, 24px 24px, 24px 24px;
+            clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 0 97%, 0 3%);
+            box-shadow: inset 0 0 38px rgba(0, 174, 255, .045), 0 0 24px rgba(0, 174, 255, .035);
+            opacity: .9;
+          }
+
+          .app-layout::before {
+            content: 'SECURE CHANNEL  •  PRIVATE TEAM  •  LIVE';
+            position: absolute;
+            right: 36px;
+            bottom: 34px;
+            width: 190px;
+            z-index: 20;
+            color: rgba(91, 206, 230, .48);
+            font: 600 9px/1.5 var(--font-mono);
+            letter-spacing: .15em;
+            text-align: center;
+            pointer-events: none;
+          }
+
+          .sidebar {
+            position: relative;
+            z-index: 2;
+            padding: 18px 14px;
+            background:
+              radial-gradient(circle at 45% 76%, rgba(15, 174, 222, .07), transparent 27%),
+              linear-gradient(180deg, rgba(4, 17, 27, .96), rgba(1, 8, 14, .98));
+            border-right: 1px solid rgba(48, 196, 231, .17);
+            box-shadow: 12px 0 42px rgba(0, 0, 0, .25);
+          }
+
+          .sidebar::after {
+            content: '';
+            position: absolute;
+            left: 32px;
+            right: 32px;
+            bottom: 30px;
+            height: 118px;
+            border: 1px solid rgba(44, 205, 239, .12);
+            border-radius: 50%;
+            background:
+              radial-gradient(circle, rgba(28, 212, 255, .12) 0 2px, transparent 3px 32px),
+              repeating-radial-gradient(circle, rgba(42, 207, 239, .10) 0 1px, transparent 1px 16px);
+            box-shadow: 0 0 34px rgba(0, 191, 255, .08), inset 0 0 28px rgba(0, 191, 255, .06);
+            transform: perspective(280px) rotateX(62deg);
+            pointer-events: none;
+          }
+
+          .brand-section {
+            padding: 2px 8px 17px;
+            border-bottom: 1px solid rgba(57, 201, 232, .14);
+          }
+          .brand-wrapper { gap: 12px; }
+          .brand-logo {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px 4px 12px 4px;
+            background: linear-gradient(145deg, #0d89c9, #06314d);
+            border: 1px solid rgba(70, 224, 255, .45);
+            box-shadow: 0 0 18px rgba(20, 191, 255, .18), inset 0 0 16px rgba(255,255,255,.08);
+          }
+          .brand-name {
+            font-size: 1.05rem;
+            letter-spacing: .13em;
+            text-transform: uppercase;
+          }
+          .logout-link {
+            color: #5f8593 !important;
+            text-transform: uppercase;
+            letter-spacing: .14em;
+            font: 600 9px var(--font-mono) !important;
+          }
+
+          .nav-groups { position: relative; z-index: 3; padding-top: 20px; }
+          .nav-header { padding: 0 5px 10px; }
+          .nav-label {
+            color: #65b8cc !important;
+            font: 600 10px var(--font-mono) !important;
+            letter-spacing: .17em;
+            text-transform: uppercase;
+          }
+          .btn-add-group {
+            width: 27px !important;
+            height: 27px !important;
+            border: 1px solid rgba(54, 214, 246, .35) !important;
+            border-radius: 7px !important;
+            background: rgba(12, 87, 112, .18) !important;
+            color: #57dfff !important;
+            box-shadow: 0 0 12px rgba(29, 201, 242, .08);
+          }
+
+          .channel-list { gap: 7px !important; }
+          .channel-list > * {
+            border: 1px solid transparent !important;
+            border-radius: 8px !important;
+            background: rgba(7, 27, 38, .28) !important;
+            transition: .2s ease !important;
+          }
+          .channel-list > *:hover {
+            border-color: rgba(45, 205, 237, .20) !important;
+            transform: translateX(3px) !important;
+          }
+
+          .main-stage {
+            position: relative;
+            min-width: 0;
+            z-index: 1;
+            background:
+              radial-gradient(circle at 53% 52%, rgba(7, 75, 104, .10), transparent 38%),
+              linear-gradient(180deg, rgba(2, 12, 20, .68), rgba(1, 7, 12, .84));
+            padding-right: 250px;
+          }
+
+          .channel-header {
+            position: relative;
+            min-height: 88px;
+            padding: 18px 28px !important;
+            border-bottom: 1px solid rgba(56, 205, 235, .15) !important;
+            background: linear-gradient(90deg, rgba(7, 27, 38, .68), rgba(2, 14, 22, .34));
+            box-shadow: 0 8px 32px rgba(0,0,0,.18);
+          }
+          .channel-header::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: -1px;
+            width: 150px;
+            height: 2px;
+            background: linear-gradient(90deg, #2ee4ff, transparent);
+            box-shadow: 0 0 14px rgba(46, 228, 255, .65);
+          }
+          .channel-info h2 {
+            font: 700 1.28rem var(--font-sans) !important;
+            letter-spacing: .01em;
+          }
+          .channel-info p {
+            margin-top: 3px;
+            color: #5f91a1 !important;
+            font-size: .73rem !important;
+          }
+          .header-actions { gap: 10px; }
+          .user-display-name {
+            padding: 5px 10px;
+            border: 1px solid rgba(53, 207, 236, .14);
+            border-radius: 20px;
+            background: rgba(11, 52, 66, .22);
+            color: #72c6d8 !important;
+            font: 600 9px var(--font-mono) !important;
+            letter-spacing: .08em;
+          }
+
+          .chat-scroll-area {
+            position: relative;
+            background:
+              linear-gradient(rgba(46, 204, 237, .018) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(46, 204, 237, .018) 1px, transparent 1px),
+              radial-gradient(circle at 50% 25%, rgba(16, 105, 139, .08), transparent 35%);
+            background-size: 40px 40px, 40px 40px, auto;
+          }
+          .chat-scroll-area::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 18%;
+            width: 310px;
+            height: 310px;
+            border: 1px solid rgba(43, 211, 240, .045);
+            border-radius: 50%;
+            transform: translateX(-50%);
+            box-shadow: 0 0 80px rgba(0, 190, 255, .025), inset 0 0 70px rgba(0, 190, 255, .025);
+            pointer-events: none;
+          }
+
+          #messagesFeed { position: relative; z-index: 2; }
+          #messagesFeed > * {
+            max-width: min(760px, 82%) !important;
+            border: 1px solid rgba(48, 204, 237, .16) !important;
+            border-radius: 13px 4px 13px 4px !important;
+            background: linear-gradient(135deg, rgba(9, 34, 46, .76), rgba(4, 17, 27, .68)) !important;
+            box-shadow: 0 12px 34px rgba(0,0,0,.22), inset 0 1px rgba(255,255,255,.035) !important;
+          }
+
+          .input-dock {
+            position: relative;
+            z-index: 4;
+            padding: 14px 24px 18px !important;
+            background: linear-gradient(180deg, rgba(2, 11, 17, .35), rgba(2, 9, 14, .94));
+            border-top: 1px solid rgba(53, 205, 235, .12) !important;
+          }
+          .input-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 5px !important;
+            border: 1px solid rgba(46, 207, 239, .24) !important;
+            border-radius: 13px !important;
+            background: rgba(2, 14, 22, .82) !important;
+            box-shadow: 0 0 28px rgba(0, 160, 220, .055), inset 0 0 18px rgba(0,0,0,.22) !important;
+          }
+          .chat-input {
+            height: 48px !important;
+            padding-left: 16px !important;
+            background: transparent !important;
+            color: #dff9ff !important;
+            font: 500 .78rem var(--font-mono) !important;
+          }
+          .chat-input::placeholder { color: #456d7a !important; }
+          .chat-input:focus { box-shadow: none !important; }
+          .btn-send {
+            min-width: 92px;
+            height: 42px !important;
+            margin-right: 2px;
+            border: 1px solid rgba(60, 217, 246, .48) !important;
+            border-radius: 9px !important;
+            background: linear-gradient(135deg, rgba(16, 120, 161, .78), rgba(8, 57, 83, .86)) !important;
+            color: #dffaff !important;
+            font: 700 10px var(--font-mono) !important;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+            box-shadow: 0 0 18px rgba(26, 199, 240, .12), inset 0 1px rgba(255,255,255,.10);
+          }
+          .btn-send:hover {
+            border-color: #4fe6ff !important;
+            box-shadow: 0 0 26px rgba(36, 212, 249, .28) !important;
+            transform: translateY(-1px);
+          }
+
+          .super-admin-deck {
+            border: 1px solid rgba(255, 174, 65, .22) !important;
+            background: linear-gradient(135deg, rgba(73, 43, 13, .25), rgba(6, 21, 29, .70)) !important;
+          }
+
+          @media (max-width: 1050px) {
+            .app-layout { grid-template-columns: 250px minmax(0, 1fr); }
+            .main-stage { padding-right: 0; }
+            .app-layout::after, .app-layout::before { display: none; }
+          }
+          @media (max-width: 720px) {
+            .app-layout { grid-template-columns: 1fr; }
+            .sidebar { display: none; }
+            .channel-header { padding: 15px 18px !important; }
+            .input-dock { padding: 10px 12px 13px !important; }
+          }
+          CSS
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/styles/medium.css
+          git rm .github/workflows/ui-refresh.yml
+          git commit -m "Refresh Convo command-deck UI"
+          git push origin main
