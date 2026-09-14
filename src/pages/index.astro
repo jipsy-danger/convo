@@ -11,13 +11,13 @@ import '../styles/access-fix.css';
 </head>
 <body>
   <div id="authOverlay" class="auth-overlay">
-    <form id="authForm" class="auth-card" novalidate>
+    <form id="authForm" class="auth-card" novalidate onsubmit="return false;">
       <div class="hud-brand">CONVO</div><div class="hud-status" id="hudStatus">ACCESS SYSTEM READY</div>
-      <button id="accessCore" class="access-core" type="submit" aria-label="Enter Convo"><span class="core-orbit orbit-one"></span><span class="core-orbit orbit-two"></span><span class="core-orbit orbit-three"></span><span class="core-grid"></span><span class="core-center"></span><span class="core-sweep"></span></button>
+      <button id="accessCore" class="access-core" type="button" aria-label="Enter Convo"><span class="core-orbit orbit-one"></span><span class="core-orbit orbit-two"></span><span class="core-orbit orbit-three"></span><span class="core-grid"></span><span class="core-center"></span><span class="core-sweep"></span></button>
       <div class="hud-progress" aria-hidden="true"><span></span><span></span><span></span><span></span></div><div class="hud-hint" id="hudHint">ENTER ACCESS CODE</div>
       <input type="password" id="pinInput" class="pin-input-hidden" maxlength="4" inputmode="numeric" autocomplete="off" aria-label="Access code" tabindex="0" />
       <div id="newUserNameBlock" class="new-user-block" style="display:none"><div class="new-user-label">IDENTITY REGISTRATION</div><input type="text" id="nameInput" class="name-field" placeholder="Display name" autocomplete="off" /></div>
-      <button id="btnLogin" class="hud-enter" type="submit">INITIALIZE</button>
+      <button id="btnLogin" class="hud-enter" type="button">INITIALIZE</button>
     </form>
   </div>
   <div class="app-layout">
