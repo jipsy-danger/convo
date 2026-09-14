@@ -13,7 +13,7 @@ function cors(extra = {}) {
     ...JSON_HEADERS,
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Convo-Pin, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, X-Convo-Pin, X-Convo-SuperAdmin, Authorization",
     "Access-Control-Max-Age": "86400",
     ...extra,
   };
@@ -199,12 +199,11 @@ async function requireUser(env, request) {
   const pin = request.headers.get("X-Convo-Pin") || "";
   if (!validPin(pin)) throw Object.assign(new Error("Unauthorized"), { status: 401 });
 
-  const user = await getUserByPin(env, pin, "normal");
-  if (!user) {
-    const superAdmin = await getUserByPin(env, pin, "superadmin");
-    if (!superAdmin) throw Object.assign(new Error("Unauthorized"), { status: 401 });
-    return superAdmin;
-  }
+  const namespace = request.headers.get("X-Convo-SuperAdmin") === "true"
+    ? "superadmin"
+    : "normal";
+  const user = await getUserByPin(env, pin, namespace);
+  if (!user) throw Object.assign(new Error("Unauthorized"), { status: 401 });
   return user;
 }
 
