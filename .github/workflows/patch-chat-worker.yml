@@ -1,0 +1,43 @@
+name: Integrate Convo chat worker features
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'worker/chat-features.js'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Integrate feature module
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('worker/index.js')
+          s = p.read_text()
+          marker = 'const JSON_HEADERS = {'
+          if "from './chat-features.js'" not in s:
+              s = "import { handleChatFeature } from './chat-features.js';\n\n" + s
+          hook = "      const chatFeatureResponse = await handleChatFeature(request, env, user);\n      if (chatFeatureResponse) return chatFeatureResponse;\n\n"
+          needle = '      return error("Not found.", 404);'
+          if hook not in s:
+              if needle not in s:
+                  raise SystemExit('Worker route hook target not found')
+              s = s.replace(needle, hook + needle, 1)
+          p.write_text(s)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add worker/index.js
+          git diff --cached --quiet || git commit -m 'Integrate Google Chat worker features'
+          git push
+          rm -f .github/workflows/patch-chat-worker.yml
+          git add .github/workflows/patch-chat-worker.yml
+          git commit -m 'Remove temporary chat worker patch workflow'
+          git push
