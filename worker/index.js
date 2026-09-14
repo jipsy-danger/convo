@@ -106,11 +106,15 @@ async function supabaseGetAll(env, table, select = "*") {
   return results;
 }
 
-async function getUserByPin(env, pin) {
+/* PIN namespaces: normal users/admins and the Super Admin are separate. */
+async function getUserByPin(env, pin, namespace = "normal") {
+  const roleFilter = namespace === "superadmin"
+    ? "&role=eq.superadmin"
+    : "&role=neq.superadmin";
   const users = await supabaseFetch(env, "users", {
     query:
       `?select=id,pin,name,role,created_at,last_activity_at` +
-      `&pin=eq.${encodeURIComponent(pin)}&limit=1`,
+      `&pin=eq.${encodeURIComponent(pin)}${roleFilter}&limit=1`,
   });
   return Array.isArray(users) && users.length ? users[0] : null;
 }
@@ -148,44 +152,18 @@ async function touchUserActivity(env, userId) {
 async function authenticate(env, pin, name, requestedSuperAdmin) {
   if (!validPin(pin)) return error("PIN must be exactly 4 digits.", 401);
 
-  let user = await getUserByPin(env, pin);
+  const namespace = requestedSuperAdmin ? "superadmin" : "normal";
+  let user = await getUserByPin(env, pin, namespace);
 
   if (user) {
-    if (user.pin === "4999" && user.role === "superadmin" && !requestedSuperAdmin) {
-      if (!name) return response({ ok: true, isNew: true, reservedPin: true });
-
-      const users = await supabaseGetAll(env, "users", "pin");
-      const usedPins = new Set(users.map((item) => String(item.pin)));
-      let assignedPin = null;
-      for (let value = 1000; value <= 9999; value += 1) {
-        const candidate = String(value);
-        if (candidate !== "4999" && !usedPins.has(candidate)) {
-          assignedPin = candidate;
-          break;
-        }
-      }
-      if (!assignedPin) return error("No user PINs are available.", 409);
-
-      const inserted = await supabaseFetch(env, "users", {
-        method: "POST",
-        query: "?select=id,pin,name,role,created_at,last_activity_at",
-        body: { pin: assignedPin, name: cleanName(name), role: "user" },
-        headers: { Prefer: "return=representation" },
-      });
-
-      user = Array.isArray(inserted) ? inserted[0] : inserted;
-      return response({ ok: true, isNew: false, assignedPin, user: formatUser(user) });
-    }
-
     await touchUserActivity(env, user.id);
     user = await getUserById(env, user.id);
     return response({ ok: true, isNew: false, user: formatUser(user) });
   }
 
-  if (pin === "4999") {
-    if (!requestedSuperAdmin) {
-      if (!name) return response({ ok: true, isNew: true, reservedPin: true });
-      return error("The super admin PIN is reserved. Choose another access code.", 409);
+  if (requestedSuperAdmin) {
+    if (pin !== "4999") {
+      return error("Invalid Super Admin access code.", 401);
     }
 
     const inserted = await supabaseFetch(env, "users", {
@@ -199,6 +177,8 @@ async function authenticate(env, pin, name, requestedSuperAdmin) {
     return response({ ok: true, isNew: true, user: formatUser(user) });
   }
 
+  /* Normal mode: 4999 is an ordinary user PIN and may coexist with the
+     Super Admin's 4999 because the database namespace is role-scoped. */
   if (!name) return response({ ok: true, isNew: true });
 
   const safeName = cleanName(name);
@@ -219,8 +199,12 @@ async function requireUser(env, request) {
   const pin = request.headers.get("X-Convo-Pin") || "";
   if (!validPin(pin)) throw Object.assign(new Error("Unauthorized"), { status: 401 });
 
-  const user = await getUserByPin(env, pin);
-  if (!user) throw Object.assign(new Error("Unauthorized"), { status: 401 });
+  const user = await getUserByPin(env, pin, "normal");
+  if (!user) {
+    const superAdmin = await getUserByPin(env, pin, "superadmin");
+    if (!superAdmin) throw Object.assign(new Error("Unauthorized"), { status: 401 });
+    return superAdmin;
+  }
   return user;
 }
 
@@ -582,7 +566,6 @@ export default {
 
         const messages = await getMessagesForChannel(env, channel.id);
 
-        /* Worker-enforced view tracking; browser does not need to send VIEWED. */
         await updateChannelViewed(env, channel.id, user.id);
         await recordActivity(env, user, channel.id, "VIEWED");
 
@@ -717,7 +700,7 @@ export default {
           return error("The super admin cannot be changed.", 403);
         }
 
-        const target = await getUserByPin(env, pin);
+        const target = await getUserByPin(env, pin, "normal");
         if (!target) return error("User not found.", 404);
 
         await supabaseFetch(env, "users", {
