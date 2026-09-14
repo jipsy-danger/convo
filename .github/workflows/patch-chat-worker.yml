@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'worker/chat-features.js'
+      - 'worker/**'
 
 permissions:
   contents: write
@@ -21,7 +21,6 @@ jobs:
           from pathlib import Path
           p = Path('worker/index.js')
           s = p.read_text()
-          marker = 'const JSON_HEADERS = {'
           if "from './chat-features.js'" not in s:
               s = "import { handleChatFeature } from './chat-features.js';\n\n" + s
           hook = "      const chatFeatureResponse = await handleChatFeature(request, env, user);\n      if (chatFeatureResponse) return chatFeatureResponse;\n\n"
