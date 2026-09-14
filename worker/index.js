@@ -561,12 +561,27 @@ export default {
         if (!channel) return response({ ok: true, messages: [] });
 
         const joined = await ensureChannelMember(env, channel.id, user.id);
-        if (joined) await recordActivity(env, user, channel.id, "JOINED");
+        if (joined) {
+          try {
+            await recordActivity(env, user, channel.id, "JOINED");
+          } catch (err) {
+            console.warn("Channel join activity failed; continuing message load.", err);
+          }
+        }
 
         const messages = await getMessagesForChannel(env, channel.id);
 
-        await updateChannelViewed(env, channel.id, user.id);
-        await recordActivity(env, user, channel.id, "VIEWED");
+        /* View bookkeeping must never make an otherwise valid message read fail. */
+        try {
+          await updateChannelViewed(env, channel.id, user.id);
+        } catch (err) {
+          console.warn("Channel viewed timestamp update failed; continuing.", err);
+        }
+        try {
+          await recordActivity(env, user, channel.id, "VIEWED");
+        } catch (err) {
+          console.warn("Channel viewed activity failed; continuing.", err);
+        }
 
         return response({ ok: true, messages });
       }
