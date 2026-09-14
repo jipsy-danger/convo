@@ -684,6 +684,26 @@ export default {
         return response({ ok: true, users: users.map(formatUser) });
       }
 
+      if (path === "/users/remove" && request.method === "POST") {
+        if (user.role !== "superadmin") return error("Forbidden.", 403);
+
+        const body = await request.json().catch(() => ({}));
+        const pin = String(body.pin || "");
+        if (!validPin(pin)) return error("Valid user PIN is required.");
+        if (pin === "4999") return error("The super admin cannot be deleted.", 403);
+
+        const target = await getUserByPin(env, pin, "normal");
+        if (!target) return error("User not found.", 404);
+
+        await supabaseFetch(env, "rpc/delete_user_account", {
+          method: "POST",
+          body: { p_target_id: target.id },
+          headers: { Prefer: "return=minimal" },
+        });
+
+        return response({ ok: true });
+      }
+
       if (path === "/users/role" && request.method === "PUT") {
         if (user.role !== "superadmin") return error("Forbidden.", 403);
 
