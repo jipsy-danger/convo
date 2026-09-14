@@ -14,37 +14,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Patch worker
-        shell: python
+        shell: bash
         run: |
+          python3 - <<'PY'
           from pathlib import Path
 
           path = Path('worker/index.js')
           text = path.read_text()
 
           old = '''async function requireUser(env, request) {
-  const pin = request.headers.get("X-Convo-Pin") || "";
-  if (!validPin(pin)) throw Object.assign(new Error("Unauthorized"), { status: 401 });
+            const pin = request.headers.get("X-Convo-Pin") || "";
+            if (!validPin(pin)) throw Object.assign(new Error("Unauthorized"), { status: 401 });
 
-  const user = await getUserByPin(env, pin, "normal");
-  if (!user) {
-    const superAdmin = await getUserByPin(env, pin, "superadmin");
-    if (!superAdmin) throw Object.assign(new Error("Unauthorized"), { status: 401 });
-    return superAdmin;
-  }
-  return user;
-}'''
+            const user = await getUserByPin(env, pin, "normal");
+            if (!user) {
+              const superAdmin = await getUserByPin(env, pin, "superadmin");
+              if (!superAdmin) throw Object.assign(new Error("Unauthorized"), { status: 401 });
+              return superAdmin;
+            }
+            return user;
+          }'''
 
           new = '''async function requireUser(env, request) {
-  const pin = request.headers.get("X-Convo-Pin") || "";
-  if (!validPin(pin)) throw Object.assign(new Error("Unauthorized"), { status: 401 });
+            const pin = request.headers.get("X-Convo-Pin") || "";
+            if (!validPin(pin)) throw Object.assign(new Error("Unauthorized"), { status: 401 });
 
-  const namespace = request.headers.get("X-Convo-SuperAdmin") === "true"
-    ? "superadmin"
-    : "normal";
-  const user = await getUserByPin(env, pin, namespace);
-  if (!user) throw Object.assign(new Error("Unauthorized"), { status: 401 });
-  return user;
-}'''
+            const namespace = request.headers.get("X-Convo-SuperAdmin") === "true"
+              ? "superadmin"
+              : "normal";
+            const user = await getUserByPin(env, pin, namespace);
+            if (!user) throw Object.assign(new Error("Unauthorized"), { status: 401 });
+            return user;
+          }'''
 
           if old not in text:
               raise SystemExit('Expected requireUser block was not found')
@@ -52,11 +53,9 @@ jobs:
 
           old_cors = '"Access-Control-Allow-Headers": "Content-Type, X-Convo-Pin, Authorization",'
           new_cors = '"Access-Control-Allow-Headers": "Content-Type, X-Convo-Pin, X-Convo-SuperAdmin, Authorization",'
-          if old_cors in text:
-              text = text.replace(old_cors, new_cors, 1)
-
+          text = text.replace(old_cors, new_cors, 1)
           path.write_text(text)
-
+          PY
       - name: Commit worker patch and remove one-time workflow
         shell: bash
         run: |
