@@ -2,3 +2,6 @@ name = "convo-api"
 main = "index.js"
 compatibility_date = "2026-09-14"
 workers_dev = true
+
+[vars]
+SUPABASE_URL = "https://hrnqzkycnmgcnusjjokj.supabase.co"
