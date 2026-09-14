@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   deploy:
@@ -19,15 +19,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Apply message feed fix
+      - name: Patch message feed loader
         run: |
           python - <<'PY'
           from pathlib import Path
           import re
-
           p = Path("worker/index.js")
           s = p.read_text()
-
           new_get = '''async function getMessagesForChannel(env, channelId) {
             const rows = await supabaseFetch(env, "messages", {
               query:
@@ -35,50 +33,27 @@ jobs:
                 `&channel_id=eq.${encodeURIComponent(channelId)}` +
                 `&order=created_at.asc&limit=300`,
             });
-
             if (!Array.isArray(rows) || !rows.length) return [];
-
             const userIds = [...new Set(rows.map((m) => m.user_id).filter(Boolean))];
             const users = userIds.length
               ? await supabaseFetch(env, "users", {
-                  query:
-                    `?select=id,pin,name,role&id=in.(${userIds.map((id) => encodeURIComponent(id)).join(",")})`,
+                  query: `?select=id,pin,name,role&id=in.(${userIds.map((id) => encodeURIComponent(id)).join(",")})`,
                 })
               : [];
-            const userMap = new Map(
-              (Array.isArray(users) ? users : []).map((u) => [u.id, u])
-            );
-
+            const userMap = new Map((Array.isArray(users) ? users : []).map((u) => [u.id, u]));
             const channels = await supabaseFetch(env, "channels", {
-              query:
-                `?select=id,name&id=eq.${encodeURIComponent(channelId)}&limit=1`,
+              query: `?select=id,name&id=eq.${encodeURIComponent(channelId)}&limit=1`,
             });
-            const channelName =
-              Array.isArray(channels) && channels[0]?.name
-                ? channels[0].name
-                : "general";
-
+            const channelName = Array.isArray(channels) && channels[0]?.name ? channels[0].name : "general";
             return rows.map((m) => {
               const u = userMap.get(m.user_id) || {};
-              return {
-                id: m.id,
-                channel: channelName,
-                channelId: m.channel_id,
-                pin: u.pin,
-                author: u.name,
-                role: u.role,
-                text: m.text,
-                time: m.created_at,
-                createdAt: m.created_at,
-              };
+              return { id: m.id, channel: channelName, channelId: m.channel_id, pin: u.pin, author: u.name, role: u.role, text: m.text, time: m.created_at, createdAt: m.created_at };
             });
           }'''
-
           pattern = r'async function getMessagesForChannel\(env, channelId\) \{.*?\n\}\n\nasync function createChannel'
           s, count = re.subn(pattern, new_get + '\n\nasync function createChannel', s, count=1, flags=re.S)
           if count == 0:
-              print("Message loader already patched or target unavailable; continuing.")
-
+              print("Message loader already patched.")
           old_post = '  await recordActivity(env, user, channel.id, "POSTED");'
           new_post = '''  try {
     await recordActivity(env, user, channel.id, "POSTED");
@@ -87,18 +62,8 @@ jobs:
   }'''
           if old_post in s:
               s = s.replace(old_post, new_post, 1)
-
           p.write_text(s)
           PY
-          if git diff --quiet -- worker/index.js; then
-            echo "No Worker source change required."
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add worker/index.js
-            git commit -m "Fix message feed loading"
-            git push
-          fi
 
       - name: Deploy Cloudflare Worker
         uses: cloudflare/wrangler-action@v4
