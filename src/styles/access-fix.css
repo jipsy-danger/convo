@@ -1,0 +1,7 @@
+/* Access interaction fixes: keep the PIN field focusable on mobile while visually hidden. */
+.pin-input-hidden{position:absolute!important;left:50%!important;top:calc(50% + 154px)!important;width:2px!important;height:2px!important;opacity:.01!important;pointer-events:auto!important;z-index:20!important;transform:translateX(-50%);padding:0!important;border:0!important;background:transparent!important;color:transparent!important;caret-color:transparent!important;outline:0!important}
+.access-core.hold-bump{animation:access-hold-bump .42s cubic-bezier(.2,.8,.2,1)}
+.access-core.admin-bump{animation:access-admin-bump .42s cubic-bezier(.2,.8,.2,1)}
+@keyframes access-hold-bump{0%{transform:perspective(700px) rotateX(3deg) scale(1)}42%{transform:perspective(700px) rotateX(3deg) scale(1.105)}72%{transform:perspective(700px) rotateX(3deg) scale(.985)}100%{transform:perspective(700px) rotateX(3deg) scale(1)}}
+@keyframes access-admin-bump{0%{transform:perspective(700px) rotateX(3deg) scale(1)}42%{transform:perspective(700px) rotateX(3deg) scale(1.12)}72%{transform:perspective(700px) rotateX(3deg) scale(.982)}100%{transform:perspective(700px) rotateX(3deg) scale(1)}}
+@media(max-width:760px){.pin-input-hidden{top:calc(50% + 145px)!important}}
