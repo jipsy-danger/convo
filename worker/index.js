@@ -284,11 +284,63 @@ async function recordActivity(env, user, channelId, action) {
   await touchUserActivity(env, user.id);
 }
 
-async function getMessagesForChannel(env, channelId) {
+async function getChannelPages(env, channelId) {
+  return await supabaseFetch(env, "channel_pages", {
+    query:
+      `?select=id,channel_id,page_number,starts_at,created_at&channel_id=eq.${encodeURIComponent(channelId)}&order=page_number.asc`,
+  });
+}
+
+async function getLastChannelPage(env, channelId) {
+  const rows = await supabaseFetch(env, "channel_pages", {
+    query:
+      `?select=id,channel_id,page_number,starts_at,created_at&channel_id=eq.${encodeURIComponent(channelId)}&order=page_number.desc&limit=1`,
+  });
+  return Array.isArray(rows) && rows.length ? rows[0] : null;
+}
+
+async function createNextChannelPage(env, channelId) {
+  const last = await getLastChannelPage(env, channelId);
+  const nextNumber = (last?.page_number || 0) + 1;
+  const inserted = await supabaseFetch(env, "channel_pages", {
+    method: "POST",
+    query: "?select=id,channel_id,page_number,starts_at,created_at",
+    body: {
+      channel_id: channelId,
+      page_number: nextNumber,
+      starts_at: new Date().toISOString(),
+    },
+    headers: { Prefer: "return=representation" },
+  });
+  return Array.isArray(inserted) ? inserted[0] : inserted;
+}
+
+async function getMessagesForChannel(env, channelId, pageNumber = null) {
+  let page = null;
+  if (pageNumber !== null) {
+    const pages = await supabaseFetch(env, "channel_pages", {
+      query:
+        `?select=id,channel_id,page_number,starts_at,created_at&channel_id=eq.${encodeURIComponent(channelId)}&page_number=eq.${encodeURIComponent(pageNumber)}&limit=1`,
+    });
+    page = Array.isArray(pages) && pages.length ? pages[0] : null;
+  }
+  if (!page) page = await getLastChannelPage(env, channelId);
+  if (!page) return [];
+
+  const nextPages = await supabaseFetch(env, "channel_pages", {
+    query:
+      `?select=starts_at&channel_id=eq.${encodeURIComponent(channelId)}&page_number=gt.${encodeURIComponent(page.page_number)}&order=page_number.asc&limit=1`,
+  });
+  const next = Array.isArray(nextPages) && nextPages.length ? nextPages[0] : null;
+  const startFilter = `&created_at=gte.${encodeURIComponent(page.starts_at)}`;
+  const endFilter = next
+    ? `&created_at=lt.${encodeURIComponent(next.starts_at)}`
+    : "";
+
   const rows = await supabaseFetch(env, "messages", {
     query:
-      `?select=id,channel_id,user_id,text,created_at` +
-      `&channel_id=eq.${encodeURIComponent(channelId)}` +
+      `?select=id,channel_id,user_id,text,created_at&channel_id=eq.${encodeURIComponent(channelId)}` +
+      startFilter + endFilter +
       `&order=created_at.asc&limit=300`,
   });
 
@@ -306,14 +358,12 @@ async function getMessagesForChannel(env, channelId) {
     (Array.isArray(authors) ? authors : []).map((author) => [String(author.id), author])
   );
 
-  const channels = await supabaseFetch(env, "channels", {
-    query:
-      `?select=id,name&id=eq.${encodeURIComponent(channelId)}&limit=1`,
+  const channelRows = await supabaseFetch(env, "channels", {
+    query: `?select=name&id=eq.${encodeURIComponent(channelId)}&limit=1`,
   });
-  const channelName = Array.isArray(channels) && channels[0]?.name
-    ? channels[0].name
+  const channelName = Array.isArray(channelRows) && channelRows[0]?.name
+    ? channelRows[0].name
     : "general";
-
   return rows.map((message) => {
     const author = authorById.get(String(message.user_id));
     return {
@@ -573,6 +623,43 @@ export default {
         return response({ ok: true });
       }
 
+      if (path === "/pages" && request.method === "GET") {
+        const channelName = url.searchParams.get("channel") || "general";
+        const channel = await getChannelByName(env, channelName);
+        if (!channel) return error("Channel not found.", 404);
+        let pages = await getChannelPages(env, channel.id);
+        if (!pages.length) {
+          await supabaseFetch(env, "channel_pages", {
+            method: "POST",
+            query: "?select=id,channel_id,page_number,starts_at,created_at",
+            body: { channel_id: channel.id, page_number: 1, starts_at: "1970-01-01T00:00:00Z" },
+            headers: { Prefer: "return=minimal" },
+          });
+          pages = await getChannelPages(env, channel.id);
+        }
+        return response({
+          ok: true,
+          pages: pages.map((page) => ({
+            page: page.page_number,
+            startsAt: page.starts_at,
+          })),
+          lastPage: pages.length ? pages[pages.length - 1].page_number : 1,
+        });
+      }
+
+      if (path === "/pages" && request.method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const channelName = String(body.channel || "").trim().toLowerCase();
+        if (!channelName) return error("Channel is required.");
+        const channel = await getChannelByName(env, channelName);
+        if (!channel) return error("Channel not found.", 404);
+        const page = await createNextChannelPage(env, channel.id);
+        return response({
+          ok: true,
+          page: { page: page.page_number, startsAt: page.starts_at },
+        });
+      }
+
       if (path === "/messages" && request.method === "GET") {
         const channelName = url.searchParams.get("channel") || "general";
         let channel = await getChannelByName(env, channelName);
@@ -598,7 +685,9 @@ export default {
           }
         }
 
-        const messages = await getMessagesForChannel(env, channel.id);
+        const requestedPage = Number(url.searchParams.get("page"));
+        const pageNumber = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : null;
+        const messages = await getMessagesForChannel(env, channel.id, pageNumber);
 
         if (!isMessageSync) {
           try {
