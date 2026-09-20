@@ -10,6 +10,8 @@
 /* Restore the message composer as a floating fixed bar at the bottom. */
 .input-dock{display:block!important;position:fixed!important;left:248px;right:0;bottom:0;z-index:900;padding:12px clamp(14px,3vw,34px) calc(12px + env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,rgba(10,11,13,.82) 32%,rgba(10,11,13,.96));pointer-events:none}
 .input-dock .input-container{pointer-events:auto}
-.chat-scroll-area{padding-bottom:96px!important}
+
+/* Keep the message history independently scrollable while the composer stays fixed. */
+.chat-scroll-area{min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;-webkit-overflow-scrolling:touch!important;scrollbar-width:auto!important;padding-bottom:96px!important}
 @media(max-width:760px){.input-dock{left:190px}}
 @media(max-width:560px){.input-dock{left:0;padding-left:12px;padding-right:12px}.chat-scroll-area{padding-bottom:92px!important}.input-container{width:100%}.chat-input{font-size:.86rem}.btn-send{padding:0 14px}}
