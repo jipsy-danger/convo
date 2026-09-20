@@ -40,3 +40,7 @@
 
 .nav-header{align-items:center!important}
 .btn-add-group{width:24px!important;height:24px!important;display:grid!important;place-items:center!important;flex:0 0 24px!important;padding:0!important;line-height:1!important;font-size:14px!important}
+
+.message-page-option{position:relative!important;user-select:none!important}
+.message-page-option::after{content:"";position:absolute;right:4px;top:50%;width:0;height:0;opacity:0;transform:translateY(-50%);border-top:3px solid transparent;border-bottom:3px solid transparent;border-left:4px solid #687580;transition:opacity .12s}
+.message-page-option:hover::after{opacity:.7}
