@@ -511,8 +511,9 @@ export default {
         );
       }
 
+      const isMessageSync = path === "/messages" && request.method === "GET" && url.searchParams.get("sync") === "1";
       const user = await requireUser(env, request);
-      await touchUserActivity(env, user.id);
+      if (!isMessageSync) await touchUserActivity(env, user.id);
 
       if (path === "/channels" && request.method === "GET") {
         let channels = await supabaseGetAll(
@@ -582,27 +583,34 @@ export default {
 
         if (!channel) return response({ ok: true, messages: [] });
 
-        const joined = await ensureChannelMember(env, channel.id, user.id);
-        if (joined) {
-          try {
-            await recordActivity(env, user, channel.id, "JOINED");
-          } catch (err) {
-            console.warn("Channel join activity failed; continuing message load.", err);
+        /*
+         * A sync read is intentionally read-only.
+         * Do not create membership/activity rows on every poll.
+         */
+        if (!isMessageSync) {
+          const joined = await ensureChannelMember(env, channel.id, user.id);
+          if (joined) {
+            try {
+              await recordActivity(env, user, channel.id, "JOINED");
+            } catch (err) {
+              console.warn("Channel join activity failed; continuing message load.", err);
+            }
           }
         }
 
         const messages = await getMessagesForChannel(env, channel.id);
 
-        /* View bookkeeping must never make an otherwise valid message read fail. */
-        try {
-          await updateChannelViewed(env, channel.id, user.id);
-        } catch (err) {
-          console.warn("Channel viewed timestamp update failed; continuing.", err);
-        }
-        try {
-          await recordActivity(env, user, channel.id, "VIEWED");
-        } catch (err) {
-          console.warn("Channel viewed activity failed; continuing.", err);
+        if (!isMessageSync) {
+          try {
+            await updateChannelViewed(env, channel.id, user.id);
+          } catch (err) {
+            console.warn("Channel viewed timestamp update failed; continuing.", err);
+          }
+          try {
+            await recordActivity(env, user, channel.id, "VIEWED");
+          } catch (err) {
+            console.warn("Channel viewed activity failed; continuing.", err);
+          }
         }
 
         return response({ ok: true, messages });

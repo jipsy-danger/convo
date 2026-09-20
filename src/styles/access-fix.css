@@ -12,6 +12,6 @@
 .input-dock .input-container{pointer-events:auto}
 
 /* Keep the message history independently scrollable while the composer stays fixed. */
-.chat-scroll-area{min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;-webkit-overflow-scrolling:touch!important;scrollbar-width:auto!important;padding-bottom:96px!important}
+.chat-scroll-area{min-height:0!important;height:100%!important;overflow-y:scroll!important;overflow-x:hidden!important;-webkit-overflow-scrolling:touch!important;overscroll-behavior:contain!important;scrollbar-width:auto!important;padding-bottom:96px!important}
 @media(max-width:760px){.input-dock{left:190px}}
 @media(max-width:560px){.input-dock{left:0;padding-left:12px;padding-right:12px}.chat-scroll-area{padding-bottom:92px!important}.input-container{width:100%}.chat-input{font-size:.86rem}.btn-send{padding:0 14px}}

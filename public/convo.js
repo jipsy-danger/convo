@@ -1,5 +1,5 @@
 const WORKER_URL='https://convo-api.atityaramsureshmanickam.workers.dev';
-let currentPin=null,currentUser=null,currentChannels=[],activeChannel=null,hiddenPin='',superAdminMode=false,autoSubmitting=false,appLoading=false;
+let currentPin=null,currentUser=null,currentChannels=[],activeChannel=null,hiddenPin='',superAdminMode=false,autoSubmitting=false,appLoading=false,messageSyncTimer=null,messageSyncInFlight=false,lastMessageSignature='';
 try{currentPin=localStorage.getItem('convo_active_pin')||null;currentUser=JSON.parse(localStorage.getItem('convo_user')||'null')}catch(e){console.warn('Convo storage unavailable; starting fresh',e)}
 const $=id=>document.getElementById(id),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')];
 const esc=value=>String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
@@ -19,18 +19,80 @@ function confirmSuperAdminJ(){if(!superAdminJArmed||superAdminMode)return;superA
 window.addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();hiddenPin='';pinInput.value='';pinInput.type='password';pinInput.inputMode='numeric';autoSubmitting=false;resetSuperAdminArming();authOverlay.classList.remove('super-mode','denied');hudStatus.textContent='ACCESS SYSTEM READY';hudHint.textContent='ENTER ACCESS CODE';updateHud();closeSuperAdminPanel();focusAccess();return}if(superAdminJArmed&&!superAdminMode&&(e.key==='j'||e.key==='J')){e.preventDefault();confirmSuperAdminJ()}});
 pinInput.addEventListener('input',e=>{let value=String(e.target.value||'');if(superAdminJArmed&&!superAdminMode){if(value.toLowerCase().includes('j')){e.target.value='';confirmSuperAdminJ()}else e.target.value='';return}value=value.replace(/\D/g,'').slice(0,4);e.target.value=value;if(value!==hiddenPin){hiddenPin=value;autoSubmitting=false;authOverlay.classList.remove('denied');updateHud();if(hiddenPin.length===4&&!autoSubmitting){autoSubmitting=true;requestAnimationFrame(()=>authForm.requestSubmit())}}});
 btnLogout.addEventListener('click',handleLogout);
-function handleLogout(){closeChannelModal();closeSuperAdminPanel();try{localStorage.removeItem('convo_active_pin');localStorage.removeItem('convo_user');sessionStorage.removeItem('convo_active_pin');sessionStorage.removeItem('convo_user')}catch(e){}currentPin=null;currentUser=null;currentChannels=[];activeChannel=null;hiddenPin='';resetSuperAdminArming();autoSubmitting=false;pinInput.value='';pinInput.type='password';pinInput.inputMode='numeric';nameInput.value='';newUserNameBlock.style.display='none';btnLogin.textContent='INITIALIZE';btnLogin.disabled=false;hudStatus.textContent='ACCESS SYSTEM READY';hudHint.textContent='ENTER ACCESS CODE';authOverlay.classList.remove('super-mode','granted','denied','checking');authOverlay.style.display='flex';updateHud();$('messagesFeed')?.replaceChildren();$('channelNavList')?.replaceChildren();$('userDisplayName').textContent='';$('btnDeleteGroup').style.display='none';$('btnCreateChannel').style.display='none';$('superAdminLauncher').hidden=true;requestAnimationFrame(focusAccess)}
+function stopMessageSync(){if(messageSyncTimer!==null){clearInterval(messageSyncTimer);messageSyncTimer=null}messageSyncInFlight=false;lastMessageSignature=''}
+function handleLogout(){stopMessageSync();closeChannelModal();closeSuperAdminPanel();try{localStorage.removeItem('convo_active_pin');localStorage.removeItem('convo_user');sessionStorage.removeItem('convo_active_pin');sessionStorage.removeItem('convo_user')}catch(e){}currentPin=null;currentUser=null;currentChannels=[];activeChannel=null;hiddenPin='';resetSuperAdminArming();autoSubmitting=false;pinInput.value='';pinInput.type='password';pinInput.inputMode='numeric';nameInput.value='';newUserNameBlock.style.display='none';btnLogin.textContent='INITIALIZE';btnLogin.disabled=false;hudStatus.textContent='ACCESS SYSTEM READY';hudHint.textContent='ENTER ACCESS CODE';authOverlay.classList.remove('super-mode','granted','denied','checking');authOverlay.style.display='flex';updateHud();$('messagesFeed')?.replaceChildren();$('channelNavList')?.replaceChildren();$('userDisplayName').textContent='';$('btnDeleteGroup').style.display='none';$('btnCreateChannel').style.display='none';$('superAdminLauncher').hidden=true;requestAnimationFrame(focusAccess)}
 function updateHud(){progressSegments.forEach((s,i)=>s.classList.toggle('filled',i<hiddenPin.length));accessCore.style.setProperty('--entry-progress',`${hiddenPin.length*25}%`)}
 authForm.addEventListener('submit',e=>{e.preventDefault();login()});
 accessCore.addEventListener('click',e=>{e.preventDefault();if(hiddenPin.length===4)authForm.requestSubmit();else focusAccess()});
 async function login(){if(hiddenPin.length!==4){hudStatus.textContent='ACCESS CODE REQUIRED';authOverlay.classList.add('denied');autoSubmitting=false;focusAccess();return}const name=nameInput.value.trim(),isSuperAdmin=superAdminMode&&hiddenPin==='4999';try{btnLogin.textContent='VERIFYING';btnLogin.disabled=true;hudStatus.textContent=isSuperAdmin?'ACCESS CORE VERIFYING':'IDENTITY VERIFYING';hudHint.textContent='AUTHENTICATING';authOverlay.classList.remove('denied');authOverlay.classList.add('checking');const r=await fetch(`${WORKER_URL}/auth`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:hiddenPin,name,isSuperAdmin})}),d=await r.json();if(!r.ok)throw new Error(d.error||'Authentication failed');if(d.isNew&&!name&&newUserNameBlock.style.display==='none'){newUserNameBlock.style.display='block';btnLogin.textContent='COMPLETE IDENTITY';btnLogin.disabled=false;hudStatus.textContent='NEW IDENTITY DETECTED';hudHint.textContent='ENTER DISPLAY NAME';authOverlay.classList.remove('checking');autoSubmitting=false;nameInput.focus();return}currentPin=d.assignedPin||hiddenPin;currentUser=d.user;try{localStorage.setItem('convo_active_pin',currentPin);localStorage.setItem('convo_user',JSON.stringify(currentUser))}catch(e){}hudStatus.textContent=d.assignedPin?'IDENTITY CREATED':'ACCESS GRANTED';hudHint.textContent=d.assignedPin?`NEW PIN: ${d.assignedPin}`:(isSuperAdmin?'SUPER ADMIN CORE ONLINE':'IDENTITY VERIFIED');authOverlay.classList.remove('checking','denied');authOverlay.classList.add('granted');setTimeout(()=>{authOverlay.style.display='none';initApp()},d.assignedPin?1800:360)}catch(err){console.error(err);hudStatus.textContent='ACCESS DENIED';hudHint.textContent='TRY AGAIN';authOverlay.classList.remove('checking','granted');authOverlay.classList.add('denied');btnLogin.textContent='INITIALIZE';autoSubmitting=false;hiddenPin='';pinInput.value='';updateHud();alert(err.message||'Failed to connect to authentication server.');focusAccess()}finally{btnLogin.disabled=false}}
 async function loadChannels(preferredName=null){const d=await api('/channels');currentChannels=Array.isArray(d.channels)?d.channels:[];renderChannels();const targetName=preferredName||activeChannel?.name||'general',target=currentChannels.find(c=>c.name===targetName)||currentChannels[0];if(target)await selectChannel(target.name,false)}
 function renderChannels(){const list=$('channelNavList');list.replaceChildren();currentChannels.forEach(channel=>{const b=document.createElement('button');b.type='button';b.className='channel-item'+(activeChannel?.id===channel.id?' active':'');b.textContent=`# ${channel.name}`;b.title=channel.description||channel.name;b.addEventListener('click',()=>selectChannel(channel.name));list.appendChild(b)})}
-async function selectChannel(channelName,reportActivity=true){const channel=currentChannels.find(c=>c.name===channelName);if(!channel)return;activeChannel=channel;$('activeChannelHeading').textContent=`# ${channel.name}`;$('activeChannelDesc').textContent=channel.description||'Project discussion';$('btnDeleteGroup').style.display=channel.name==='general'||!['admin','superadmin'].includes(currentUser?.role)?'none':'inline-flex';renderChannels();$('messagesFeed').innerHTML='<div class="state-message">Loading messages...</div>';try{const d=await api(`/messages?channel=${encodeURIComponent(channel.name)}`);renderMessages(Array.isArray(d.messages)?d.messages:[])}catch(err){$('messagesFeed').innerHTML='<div class="state-message">Unable to load this channel.</div>';showAppError(err);return}if(reportActivity){try{await api('/activity',{method:'POST',body:JSON.stringify({channel:channel.name,action:'VIEWED'})})}catch(err){console.warn('Channel activity logging failed; messages remain visible.',err)}}}
+function getMessageSignature(messages){return JSON.stringify(messages.map(m=>[m.id,m.channelId,m.pin,m.author,m.role,m.text,m.time||m.createdAt]));}
+async function syncActiveMessages(preserveScroll=true){
+  if(!currentUser||!activeChannel||messageSyncInFlight)return;
+  messageSyncInFlight=true;
+  try{
+    const d=await api(`/messages?channel=${encodeURIComponent(activeChannel.name)}&sync=1`);
+    const messages=Array.isArray(d.messages)?d.messages:[];
+    const signature=getMessageSignature(messages);
+    if(signature!==lastMessageSignature){
+      const feed=$('messagesFeed');
+      const previousScroll=feed.scrollTop;
+      const wasAtBottom=feed.scrollHeight-feed.scrollTop-feed.clientHeight<48;
+      lastMessageSignature=signature;
+      renderMessages(messages);
+      if(preserveScroll){
+        if(wasAtBottom)feed.scrollTop=feed.scrollHeight;
+        else feed.scrollTop=previousScroll;
+      }else{
+        feed.scrollTop=feed.scrollHeight;
+      }
+    }
+  }catch(err){
+    console.warn('Background message sync failed.',err);
+  }finally{
+    messageSyncInFlight=false;
+  }
+}
+function startMessageSync(){
+  stopMessageSync();
+  messageSyncTimer=setInterval(()=>syncActiveMessages(true),3000);
+}
+async function selectChannel(channelName,reportActivity=true){
+  const channel=currentChannels.find(c=>c.name===channelName);
+  if(!channel)return;
+  stopMessageSync();
+  activeChannel=channel;
+  $('activeChannelHeading').textContent=`# ${channel.name}`;
+  $('activeChannelDesc').textContent=channel.description||'Project discussion';
+  $('btnDeleteGroup').style.display=channel.name==='general'||!['admin','superadmin'].includes(currentUser?.role)?'none':'inline-flex';
+  renderChannels();
+  $('messagesFeed').innerHTML='<div class="state-message">Loading messages...</div>';
+  lastMessageSignature='';
+  try{
+    const d=await api(`/messages?channel=${encodeURIComponent(channel.name)}&sync=1`);
+    const messages=Array.isArray(d.messages)?d.messages:[];
+    lastMessageSignature=getMessageSignature(messages);
+    renderMessages(messages);
+    $('messagesFeed').scrollTop=$('messagesFeed').scrollHeight;
+  }catch(err){
+    $('messagesFeed').innerHTML='<div class="state-message">Unable to load this channel.</div>';
+    showAppError(err);
+    return;
+  }
+  if(reportActivity){
+    try{
+      await api('/activity',{method:'POST',body:JSON.stringify({channel:channel.name,action:'VIEWED'})});
+    }catch(err){
+      console.warn('Channel activity logging failed; messages remain visible.',err);
+    }
+  }
+  startMessageSync();
+}
 function renderMessages(messages){const feed=$('messagesFeed');feed.replaceChildren();if(!messages.length){const e=document.createElement('div');e.className='state-message';e.textContent='No messages yet. Start the conversation.';feed.appendChild(e);return}messages.forEach(message=>{const article=document.createElement('article');article.className='message-card';const own=currentUser&&message.pin===currentUser.pin,canDelete=currentUser&&(currentUser.role==='superadmin'||own||(currentUser.role==='admin'&&message.role==='user'));article.innerHTML=`<div class="message-meta"><strong>${esc(message.author||'Unknown')}</strong><span>${esc(message.role||'user')}</span><time>${esc(formatTime(message.time||message.createdAt))}</time></div><div class="message-text">${esc(message.text)}</div>${canDelete?`<button type="button" class="message-delete" data-message-id="${Number(message.id)}">Delete</button>`:''}`;const del=article.querySelector('.message-delete');if(del)del.addEventListener('click',()=>deleteMessage(message.id));feed.appendChild(article)})}
-async function deleteMessage(id){if(!confirm('Delete this message?'))return;try{await api(`/messages/${encodeURIComponent(id)}`,{method:'DELETE'});await selectChannel(activeChannel.name,false)}catch(err){alert(err.message||'Unable to delete message.')}}
+async function deleteMessage(id){if(!confirm('Delete this message?'))return;try{await api(`/messages/${encodeURIComponent(id)}`,{method:'DELETE'});await syncActiveMessages(true)}catch(err){alert(err.message||'Unable to delete message.')}}
 const messageContextMenu=document.createElement('div');messageContextMenu.className='message-context-menu';messageContextMenu.hidden=true;messageContextMenu.innerHTML='<button type="button" class="message-context-delete">Delete</button>';document.body.appendChild(messageContextMenu);let contextDeleteId=null;function closeMessageContextMenu(){messageContextMenu.hidden=true;contextDeleteId=null}document.addEventListener('contextmenu',event=>{const article=event.target.closest('#messagesFeed .message-card'),del=article?.querySelector('.message-delete');if(!article||!del){event.preventDefault();closeMessageContextMenu();return}event.preventDefault();contextDeleteId=del.dataset.messageId;messageContextMenu.hidden=false;const w=120,h=42,left=Math.min(event.clientX,innerWidth-w-8),top=Math.min(event.clientY,innerHeight-h-8);messageContextMenu.style.left=`${Math.max(8,left)}px`;messageContextMenu.style.top=`${Math.max(8,top)}px`});messageContextMenu.querySelector('.message-context-delete').addEventListener('click',()=>{if(contextDeleteId!==null)deleteMessage(contextDeleteId);closeMessageContextMenu()});document.addEventListener('click',e=>{if(!messageContextMenu.contains(e.target))closeMessageContextMenu()});window.addEventListener('keydown',e=>{if(e.key==='Escape')closeMessageContextMenu()});window.addEventListener('scroll',closeMessageContextMenu,true);window.addEventListener('resize',closeMessageContextMenu);
-window.handlePostMessage=async function(){if(!currentUser||!activeChannel)return;const input=$('msgInput'),text=input.value.trim();if(!text)return;const button=document.querySelector('.btn-send');input.disabled=true;if(button)button.disabled=true;try{await api('/messages',{method:'POST',body:JSON.stringify({channel:activeChannel.name,text})});input.value='';await selectChannel(activeChannel.name,false);input.focus()}catch(err){alert(err.message||'Unable to post message.')}finally{input.disabled=false;if(button)button.disabled=false}};
+window.handlePostMessage=async function(){if(!currentUser||!activeChannel)return;const input=$('msgInput'),text=input.value.trim();if(!text)return;const button=document.querySelector('.btn-send');input.disabled=true;if(button)button.disabled=true;try{await api('/messages',{method:'POST',body:JSON.stringify({channel:activeChannel.name,text})});input.value='';await syncActiveMessages(true);input.focus()}catch(err){alert(err.message||'Unable to post message.')}finally{input.disabled=false;if(button)button.disabled=false}};
 const channelModal=$('channelModal'),channelForm=$('channelForm'),channelNameInput=$('channelNameInput'),channelDescriptionInput=$('channelDescriptionInput'),channelModalError=$('channelModalError'),btnSubmitChannel=$('btnSubmitChannel');
 function closeChannelModal(){channelModal.hidden=true;channelForm.reset();channelModalError.textContent='';btnSubmitChannel.disabled=false;btnSubmitChannel.textContent='Create'}
 window.createCustomGroup=function(){if(!currentUser||!['admin','superadmin'].includes(currentUser.role))return;channelModal.hidden=false;channelModalError.textContent='';requestAnimationFrame(()=>channelNameInput.focus())};
