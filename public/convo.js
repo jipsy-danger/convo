@@ -1,7 +1,7 @@
 const WORKER_URL='https://convo-api.atityaramsureshmanickam.workers.dev';
-let currentPin=null,currentUser=null,currentChannels=[],activeChannel=null,hiddenPin='',superAdminMode=false,autoSubmitting=false,appLoading=false,messageSyncTimer=null,messageSyncInFlight=false,lastMessageSignature='';
+let currentPin=null,currentUser=null,currentChannels=[],activeChannel=null,hiddenPin='',superAdminMode=false,autoSubmitting=false,appLoading=false,messageSyncTimer=null,messageSyncInFlight=false,lastMessageSignature='',activePage=1,lastPage=1;
 try{currentPin=localStorage.getItem('convo_active_pin')||null;currentUser=JSON.parse(localStorage.getItem('convo_user')||'null')}catch(e){console.warn('Convo storage unavailable; starting fresh',e)}
-const $=id=>document.getElementById(id),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')];
+const $=id=>document.getElementById(id),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')],btnPagePrev=$('btnPagePrev'),btnPageNext=$('btnPageNext'),messagePageIndicator=$('messagePageIndicator');
 const esc=value=>String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
 const formatTime=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'':d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
 function focusAccess(){pinInput.focus({preventScroll:true})}
@@ -28,11 +28,50 @@ async function login(){if(hiddenPin.length!==4){hudStatus.textContent='ACCESS CO
 async function loadChannels(preferredName=null){const d=await api('/channels');currentChannels=Array.isArray(d.channels)?d.channels:[];renderChannels();const targetName=preferredName||activeChannel?.name||'general',target=currentChannels.find(c=>c.name===targetName)||currentChannels[0];if(target)await selectChannel(target.name,false)}
 function renderChannels(){const list=$('channelNavList');list.replaceChildren();currentChannels.forEach(channel=>{const b=document.createElement('button');b.type='button';b.className='channel-item'+(activeChannel?.id===channel.id?' active':'');b.textContent=`# ${channel.name}`;b.title=channel.description||channel.name;b.addEventListener('click',()=>selectChannel(channel.name));list.appendChild(b)})}
 function getMessageSignature(messages){return JSON.stringify(messages.map(m=>[m.id,m.channelId,m.pin,m.author,m.role,m.text,m.time||m.createdAt]));}
+function pageStorageKey(channel){return `convo_active_page_${channel?.id||channel?.name||'general'}`;}
+function updatePageControls(){
+  if(messagePageIndicator)messagePageIndicator.textContent=String(activePage);
+  if(btnPagePrev)btnPagePrev.disabled=activePage<=1;
+  if(btnPageNext)btnPageNext.disabled=false;
+}
+function saveActivePage(){
+  try{if(activeChannel)localStorage.setItem(pageStorageKey(activeChannel),String(activePage))}catch(e){}
+}
+async function loadChannelPages(channel){
+  const d=await api(`/pages?channel=${encodeURIComponent(channel.name)}`);
+  const pages=Array.isArray(d.pages)?d.pages:[];
+  lastPage=Math.max(1,Number(d.lastPage)||pages.length||1);
+  let saved=0;
+  try{saved=Number(localStorage.getItem(pageStorageKey(channel))||0)}catch(e){}
+  activePage=saved>=1&&saved<=lastPage?saved:lastPage;
+  saveActivePage();
+  updatePageControls();
+}
+async function loadActivePage(preserveScroll=false){
+  if(!activeChannel)return;
+  const feed=$('messagesFeed');
+  stopMessageSync();
+  lastMessageSignature='';
+  try{
+    const d=await api(`/messages?channel=${encodeURIComponent(activeChannel.name)}&page=${encodeURIComponent(activePage)}&sync=1`);
+    const messages=Array.isArray(d.messages)?d.messages:[];
+    lastMessageSignature=getMessageSignature(messages);
+    renderMessages(messages);
+    feed.scrollTop=preserveScroll?0:feed.scrollHeight;
+  }catch(err){
+    feed.innerHTML='<div class="state-message">Unable to load this page.</div>';
+    showAppError(err);
+    return false;
+  }
+  updatePageControls();
+  startMessageSync();
+  return true;
+}
 async function syncActiveMessages(preserveScroll=true){
   if(!currentUser||!activeChannel||messageSyncInFlight)return;
   messageSyncInFlight=true;
   try{
-    const d=await api(`/messages?channel=${encodeURIComponent(activeChannel.name)}&sync=1`);
+    const d=await api(`/messages?channel=${encodeURIComponent(activeChannel.name)}&page=${encodeURIComponent(activePage)}&sync=1`);
     const messages=Array.isArray(d.messages)?d.messages:[];
     const signature=getMessageSignature(messages);
     if(signature!==lastMessageSignature){
@@ -44,19 +83,33 @@ async function syncActiveMessages(preserveScroll=true){
       if(preserveScroll){
         if(wasAtBottom)feed.scrollTop=feed.scrollHeight;
         else feed.scrollTop=previousScroll;
-      }else{
-        feed.scrollTop=feed.scrollHeight;
-      }
+      }else feed.scrollTop=feed.scrollHeight;
     }
-  }catch(err){
-    console.warn('Background message sync failed.',err);
-  }finally{
-    messageSyncInFlight=false;
-  }
+  }catch(err){console.warn('Background message sync failed.',err)}
+  finally{messageSyncInFlight=false}
 }
-function startMessageSync(){
-  stopMessageSync();
-  messageSyncTimer=setInterval(()=>syncActiveMessages(true),3000);
+function startMessageSync(){stopMessageSync();messageSyncTimer=setInterval(()=>syncActiveMessages(true),3000)}
+async function selectMessagePage(page){
+  if(!activeChannel)return;
+  const target=Math.max(1,Math.min(lastPage,Number(page)||1));
+  if(target===activePage){updatePageControls();return}
+  activePage=target;
+  saveActivePage();
+  await loadActivePage(false);
+}
+async function nextMessagePage(){
+  if(!activeChannel)return;
+  if(activePage<lastPage){await selectMessagePage(activePage+1);return}
+  try{
+    const d=await api('/pages',{method:'POST',body:JSON.stringify({channel:activeChannel.name})});
+    const created=Number(d.page?.page);
+    if(!created)return;
+    lastPage=Math.max(lastPage,created);
+    activePage=created;
+    saveActivePage();
+    updatePageControls();
+    await loadActivePage(false);
+  }catch(err){alert(err.message||'Unable to create the next message page.')}
 }
 async function selectChannel(channelName,reportActivity=true){
   const channel=currentChannels.find(c=>c.name===channelName);
@@ -68,27 +121,23 @@ async function selectChannel(channelName,reportActivity=true){
   $('btnDeleteGroup').style.display=channel.name==='general'||!['admin','superadmin'].includes(currentUser?.role)?'none':'inline-flex';
   renderChannels();
   $('messagesFeed').innerHTML='<div class="state-message">Loading messages...</div>';
-  lastMessageSignature='';
   try{
-    const d=await api(`/messages?channel=${encodeURIComponent(channel.name)}&sync=1`);
-    const messages=Array.isArray(d.messages)?d.messages:[];
-    lastMessageSignature=getMessageSignature(messages);
-    renderMessages(messages);
-    $('messagesFeed').scrollTop=$('messagesFeed').scrollHeight;
+    await loadChannelPages(channel);
+    const loaded=await loadActivePage(false);
+    if(!loaded)return;
   }catch(err){
     $('messagesFeed').innerHTML='<div class="state-message">Unable to load this channel.</div>';
     showAppError(err);
     return;
   }
   if(reportActivity){
-    try{
-      await api('/activity',{method:'POST',body:JSON.stringify({channel:channel.name,action:'VIEWED'})});
-    }catch(err){
-      console.warn('Channel activity logging failed; messages remain visible.',err);
-    }
+    try{await api('/activity',{method:'POST',body:JSON.stringify({channel:channel.name,action:'VIEWED'})})}
+    catch(err){console.warn('Channel activity logging failed; messages remain visible.',err)}
   }
-  startMessageSync();
 }
+btnPagePrev?.addEventListener('click',()=>selectMessagePage(activePage-1));
+btnPageNext?.addEventListener('click',()=>nextMessagePage());
+updatePageControls();
 function renderMessages(messages){const feed=$('messagesFeed');feed.replaceChildren();if(!messages.length){const e=document.createElement('div');e.className='state-message';e.textContent='No messages yet. Start the conversation.';feed.appendChild(e);return}messages.forEach(message=>{const article=document.createElement('article');article.className='message-card';const own=currentUser&&message.pin===currentUser.pin,canDelete=currentUser&&(currentUser.role==='superadmin'||own||(currentUser.role==='admin'&&message.role==='user'));article.innerHTML=`<div class="message-meta"><strong>${esc(message.author||'Unknown')}</strong><span>${esc(message.role||'user')}</span><time>${esc(formatTime(message.time||message.createdAt))}</time></div><div class="message-text">${esc(message.text)}</div>${canDelete?`<button type="button" class="message-delete" data-message-id="${Number(message.id)}">Delete</button>`:''}`;const del=article.querySelector('.message-delete');if(del)del.addEventListener('click',()=>deleteMessage(message.id));feed.appendChild(article)})}
 async function deleteMessage(id){if(!confirm('Delete this message?'))return;try{await api(`/messages/${encodeURIComponent(id)}`,{method:'DELETE'});await syncActiveMessages(true)}catch(err){alert(err.message||'Unable to delete message.')}}
 const messageContextMenu=document.createElement('div');messageContextMenu.className='message-context-menu';messageContextMenu.hidden=true;messageContextMenu.innerHTML='<button type="button" class="message-context-delete">Delete</button>';document.body.appendChild(messageContextMenu);let contextDeleteId=null;function closeMessageContextMenu(){messageContextMenu.hidden=true;contextDeleteId=null}document.addEventListener('contextmenu',event=>{const article=event.target.closest('#messagesFeed .message-card'),del=article?.querySelector('.message-delete');if(!article||!del){event.preventDefault();closeMessageContextMenu();return}event.preventDefault();contextDeleteId=del.dataset.messageId;messageContextMenu.hidden=false;const w=120,h=42,left=Math.min(event.clientX,innerWidth-w-8),top=Math.min(event.clientY,innerHeight-h-8);messageContextMenu.style.left=`${Math.max(8,left)}px`;messageContextMenu.style.top=`${Math.max(8,top)}px`});messageContextMenu.querySelector('.message-context-delete').addEventListener('click',()=>{if(contextDeleteId!==null)deleteMessage(contextDeleteId);closeMessageContextMenu()});document.addEventListener('click',e=>{if(!messageContextMenu.contains(e.target))closeMessageContextMenu()});window.addEventListener('keydown',e=>{if(e.key==='Escape')closeMessageContextMenu()});window.addEventListener('scroll',closeMessageContextMenu,true);window.addEventListener('resize',closeMessageContextMenu);
