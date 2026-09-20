@@ -21,12 +21,22 @@
 @media(max-width:760px){.input-dock{left:190px}}
 @media(max-width:560px){.input-dock{left:0;padding-left:12px;padding-right:12px}.chat-scroll-area{top:68px!important;padding-bottom:106px!important}.input-container{width:100%}.chat-input{font-size:.86rem}.btn-send{padding:0 14px}}
 
-/* Existing message pages picker. It only lists pages that already exist. */
-.message-page-indicator{border:1px solid transparent!important;background:transparent!important;cursor:pointer!important;padding:0!important}
-.message-page-indicator:hover{color:#dce7ef!important;border-color:rgba(92,108,122,.3)!important;background:#151a20!important}
+/* Restore the compact page controls to the message-area position. */
+.message-page-controls{position:absolute!important;top:82px!important;right:24px!important;z-index:920!important;display:flex!important;align-items:center!important;gap:4px!important;padding:3px!important;border:1px solid rgba(115,130,145,.28)!important;border-radius:7px!important;background:rgba(14,17,21,.9)!important;backdrop-filter:blur(10px)!important;box-shadow:0 6px 20px rgba(0,0,0,.24)!important}
+.page-nav-btn{width:30px!important;height:28px!important;display:grid!important;place-items:center!important;padding:0!important;border:1px solid rgba(92,108,122,.38)!important;border-radius:5px!important;background:#11151a!important;color:#aeb9c4!important;font-size:15px!important;line-height:1!important;cursor:pointer!important;transition:background .16s,border-color .16s,color .16s,transform .16s!important}
+.page-nav-btn:hover:not(:disabled){background:#192029!important;border-color:rgba(58,184,255,.55)!important;color:#fff!important;transform:translateY(-1px)!important}
+.page-nav-btn:disabled{opacity:.32!important;cursor:default!important}
+.page-nav-indicator{min-width:24px!important;text-align:center!important;color:#75818d!important;font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace!important;user-select:none!important;border:1px solid transparent!important;background:transparent!important;cursor:pointer!important;padding:0!important}
+.page-nav-indicator:hover{color:#dce7ef!important;border-color:rgba(92,108,122,.3)!important;background:#151a20!important}
+.chat-scroll-area{padding-top:48px!important}
+@media(max-width:560px){.message-page-controls{top:73px!important;right:12px!important}.chat-scroll-area{padding-top:44px!important}}
+
 .message-page-menu{position:absolute!important;top:calc(100% + 6px)!important;left:50%!important;transform:translateX(-50%)!important;min-width:72px!important;max-height:min(260px,50vh)!important;overflow-y:auto!important;padding:4px!important;border:1px solid rgba(115,130,145,.3)!important;border-radius:7px!important;background:rgba(14,17,21,.98)!important;box-shadow:0 12px 30px rgba(0,0,0,.45)!important;backdrop-filter:blur(12px)!important;z-index:940!important}
 .message-page-menu[hidden]{display:none!important}
 .message-page-option{display:block!important;width:100%!important;height:27px!important;border:1px solid transparent!important;border-radius:4px!important;background:transparent!important;color:#87939e!important;font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace!important;cursor:pointer!important}
 .message-page-option:hover{background:#192029!important;color:#fff!important}
 .message-page-option.active{border-color:rgba(56,189,248,.28)!important;background:#14202a!important;color:#7edcff!important}
 @media(max-width:560px){.message-page-menu{max-height:220px!important}}
+
+.nav-header{align-items:center!important}
+.btn-add-group{width:24px!important;height:24px!important;display:grid!important;place-items:center!important;flex:0 0 24px!important;padding:0!important;line-height:1!important;font-size:14px!important}
