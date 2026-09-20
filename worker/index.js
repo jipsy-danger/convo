@@ -660,6 +660,44 @@ export default {
         });
       }
 
+      if (path === "/pages" && request.method === "DELETE") {
+        if (!["admin", "superadmin"].includes(user.role)) {
+          return error("Forbidden.", 403);
+        }
+        const channelName = String(url.searchParams.get("channel") || "").trim().toLowerCase();
+        const pageNumber = Number(url.searchParams.get("page"));
+        if (!channelName) return error("Channel is required.");
+        if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+          return error("Valid page number is required.");
+        }
+        const channel = await getChannelByName(env, channelName);
+        if (!channel) return error("Channel not found.", 404);
+        const pages = await supabaseFetch(env, "channel_pages", {
+          query:
+            `?select=id,channel_id,page_number&channel_id=eq.${encodeURIComponent(channel.id)}&order=page_number.asc`,
+        });
+        if (!Array.isArray(pages) || !pages.length) {
+          return error("Message page not found.", 404);
+        }
+        if (pages.length <= 1) {
+          return error("The last message page cannot be deleted.", 400);
+        }
+        const page = pages.find((item) => Number(item.page_number) === pageNumber);
+        if (!page) return error("Message page not found.", 404);
+
+        await supabaseFetch(env, "messages", {
+          method: "DELETE",
+          query: `?channel_id=eq.${encodeURIComponent(channel.id)}&page_id=eq.${encodeURIComponent(page.id)}`,
+          headers: { Prefer: "return=minimal" },
+        });
+        await supabaseFetch(env, "channel_pages", {
+          method: "DELETE",
+          query: `?id=eq.${encodeURIComponent(page.id)}&channel_id=eq.${encodeURIComponent(channel.id)}`,
+          headers: { Prefer: "return=minimal" },
+        });
+        return response({ ok: true, deletedPage: pageNumber });
+      }
+
       if (path === "/messages" && request.method === "GET") {
         const channelName = url.searchParams.get("channel") || "general";
         let channel = await getChannelByName(env, channelName);
