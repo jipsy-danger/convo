@@ -287,26 +287,48 @@ async function recordActivity(env, user, channelId, action) {
 async function getMessagesForChannel(env, channelId) {
   const rows = await supabaseFetch(env, "messages", {
     query:
-      `?select=id,channel_id,user_id,text,created_at,users(pin,name,role),channels(name)` +
+      `?select=id,channel_id,user_id,text,created_at` +
       `&channel_id=eq.${encodeURIComponent(channelId)}` +
       `&order=created_at.asc&limit=300`,
   });
 
-  if (!Array.isArray(rows)) return [];
+  if (!Array.isArray(rows) || !rows.length) return [];
 
-  return rows.map((m) => ({
-    id: m.id,
-    channel: m.channels?.name || "general",
-    channelId: m.channel_id,
-    pin: m.users?.pin,
-    author: m.users?.name,
-    role: m.users?.role,
-    text: m.text,
-    time: m.created_at,
-    createdAt: m.created_at,
-  }));
+  const userIds = [...new Set(rows.map((message) => message.user_id).filter(Boolean))];
+  const authors = userIds.length
+    ? await supabaseFetch(env, "users", {
+        query:
+          `?select=id,pin,name,role&id=in.(${userIds.map((id) => encodeURIComponent(id)).join(",")})`,
+      })
+    : [];
+
+  const authorById = new Map(
+    (Array.isArray(authors) ? authors : []).map((author) => [String(author.id), author])
+  );
+
+  const channels = await supabaseFetch(env, "channels", {
+    query:
+      `?select=id,name&id=eq.${encodeURIComponent(channelId)}&limit=1`,
+  });
+  const channelName = Array.isArray(channels) && channels[0]?.name
+    ? channels[0].name
+    : "general";
+
+  return rows.map((message) => {
+    const author = authorById.get(String(message.user_id));
+    return {
+      id: message.id,
+      channel: channelName,
+      channelId: message.channel_id,
+      pin: author?.pin,
+      author: author?.name,
+      role: author?.role,
+      text: message.text,
+      time: message.created_at,
+      createdAt: message.created_at,
+    };
+  });
 }
-
 async function createChannel(env, user, name, description) {
   const safeName = String(name || "")
     .trim()
