@@ -32,7 +32,7 @@
 
 
 /* Existing message pages picker. It only lists pages that already exist. */
-.message-page-controls{position:relative!important}
+.message-page-controls{position:absolute!important;top:82px!important;right:24px!important;z-index:920!important;display:flex!important;align-items:center!important;gap:4px!important;padding:3px!important;border:1px solid rgba(115,130,145,.28)!important;border-radius:7px!important;background:rgba(14,17,21,.9)!important;backdrop-filter:blur(10px)!important;box-shadow:0 6px 20px rgba(0,0,0,.24)!important}
 .page-nav-indicator{border:1px solid transparent!important;background:transparent!important;cursor:pointer!important;padding:0!important}
 .page-nav-indicator:hover{color:#dce7ef!important;border-color:rgba(92,108,122,.3)!important;background:#151a20!important}
 .message-page-menu{position:absolute!important;top:calc(100% + 6px)!important;left:50%!important;transform:translateX(-50%)!important;min-width:72px!important;max-height:min(260px,50vh)!important;overflow-y:auto!important;padding:4px!important;border:1px solid rgba(115,130,145,.3)!important;border-radius:7px!important;background:rgba(14,17,21,.98)!important;box-shadow:0 12px 30px rgba(0,0,0,.45)!important;backdrop-filter:blur(12px)!important;z-index:940!important}
