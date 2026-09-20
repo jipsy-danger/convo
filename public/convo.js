@@ -40,6 +40,13 @@ function renderPageMenu(){
     button.setAttribute('aria-selected',page===activePage?'true':'false');
     button.textContent=String(page);
     button.addEventListener('click',async e=>{e.stopPropagation();closePageMenu();await selectMessagePage(page)});
+    button.addEventListener('contextmenu',e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      if(lastPage<=1)return;
+      closePageMenu();
+      deleteMessagePage(page);
+    });
     messagePageMenu.appendChild(button);
   }
 }
@@ -118,6 +125,24 @@ async function syncActiveMessages(preserveScroll=true){
   finally{messageSyncInFlight=false}
 }
 function startMessageSync(){stopMessageSync();messageSyncTimer=setInterval(()=>syncActiveMessages(true),3000)}
+async function deleteMessagePage(page){
+  if(!activeChannel||lastPage<=1)return;
+  const target=Math.max(1,Number(page)||0);
+  if(!target||target>lastPage)return;
+  if(!confirm(`Delete message page ${target}? All messages on this page will also be deleted.`))return;
+  try{
+    await api(`/pages?channel=${encodeURIComponent(activeChannel.name)}&page=${encodeURIComponent(target)}`,{method:'DELETE'});
+    const remaining=lastPage-1;
+    lastPage=Math.max(1,remaining);
+    if(activePage===target)activePage=Math.min(target,lastPage);
+    else if(activePage>target)activePage-=1;
+    saveActivePage();
+    updatePageControls();
+    await loadActivePage(false);
+  }catch(err){
+    alert(err.message||'Unable to delete this message page.');
+  }
+}
 async function selectMessagePage(page){
   if(!activeChannel)return;
   const target=Math.max(1,Math.min(lastPage,Number(page)||1));
