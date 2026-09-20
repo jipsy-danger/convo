@@ -301,6 +301,18 @@ async function getLastChannelPage(env, channelId) {
 
 async function createNextChannelPage(env, channelId) {
   const last = await getLastChannelPage(env, channelId);
+  if (last) {
+    const existingMessages = await supabaseFetch(env, "messages", {
+      query:
+        `?select=id&channel_id=eq.${encodeURIComponent(channelId)}&page_id=eq.${encodeURIComponent(last.id)}&limit=1`,
+    });
+    if (!Array.isArray(existingMessages) || !existingMessages.length) {
+      throw Object.assign(
+        new Error("The current message page must contain at least one message before creating the next page."),
+        { status: 400 }
+      );
+    }
+  }
   const nextNumber = (last?.page_number || 0) + 1;
   const inserted = await supabaseFetch(env, "channel_pages", {
     method: "POST",
@@ -327,21 +339,9 @@ async function getMessagesForChannel(env, channelId, pageNumber = null) {
   if (!page) page = await getLastChannelPage(env, channelId);
   if (!page) return [];
 
-  const nextPages = await supabaseFetch(env, "channel_pages", {
-    query:
-      `?select=starts_at&channel_id=eq.${encodeURIComponent(channelId)}&page_number=gt.${encodeURIComponent(page.page_number)}&order=page_number.asc&limit=1`,
-  });
-  const next = Array.isArray(nextPages) && nextPages.length ? nextPages[0] : null;
-  const startFilter = `&created_at=gte.${encodeURIComponent(page.starts_at)}`;
-  const endFilter = next
-    ? `&created_at=lt.${encodeURIComponent(next.starts_at)}`
-    : "";
-
   const rows = await supabaseFetch(env, "messages", {
     query:
-      `?select=id,channel_id,user_id,text,created_at&channel_id=eq.${encodeURIComponent(channelId)}` +
-      startFilter + endFilter +
-      `&order=created_at.asc&limit=300`,
+      `?select=id,channel_id,user_id,text,created_at&channel_id=eq.${encodeURIComponent(channelId)}&page_id=eq.${encodeURIComponent(page.id)}&order=created_at.asc&limit=300`,
   });
 
   if (!Array.isArray(rows) || !rows.length) return [];
@@ -722,10 +722,29 @@ export default {
         const joined = await ensureChannelMember(env, channel.id, user.id);
         if (joined) await recordActivity(env, user, channel.id, "JOINED");
 
+        const requestedPage = Number(body.page);
+        const pageNumber = Number.isInteger(requestedPage) && requestedPage > 0
+          ? requestedPage
+          : null;
+        let page = pageNumber !== null
+          ? (await supabaseFetch(env, "channel_pages", {
+              query:
+                `?select=id,channel_id,page_number&channel_id=eq.${encodeURIComponent(channel.id)}&page_number=eq.${encodeURIComponent(pageNumber)}&limit=1`,
+            }))[0]
+          : await getLastChannelPage(env, channel.id);
+        if (!page) {
+          page = await createNextChannelPage(env, channel.id);
+        }
+
         const inserted = await supabaseFetch(env, "messages", {
           method: "POST",
-          query: "?select=id,channel_id,user_id,text,created_at",
-          body: { channel_id: channel.id, user_id: user.id, text },
+          query: "?select=id,channel_id,user_id,page_id,text,created_at",
+          body: {
+            channel_id: channel.id,
+            user_id: user.id,
+            page_id: page.id,
+            text,
+          },
           headers: { Prefer: "return=representation" },
         });
 
@@ -738,6 +757,7 @@ export default {
             id: message.id,
             channel: channel.name,
             channelId: message.channel_id,
+            page: page.page_number,
             pin: user.pin,
             author: user.name,
             role: user.role,
