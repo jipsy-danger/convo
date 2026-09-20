@@ -772,18 +772,22 @@ export default {
         const id = path.split("/").pop();
         if (!id) return error("Message id is required.");
 
+        // Keep the message lookup independent from the users relation.
+        // PostgREST can reject the embedded users relation when more than one
+        // relationship exists between these tables.
         const rows = await supabaseFetch(env, "messages", {
           query:
-            `?select=id,channel_id,user_id,text,created_at,users(pin,name,role)` +
+            `?select=id,channel_id,user_id,text,created_at` +
             `&id=eq.${encodeURIComponent(id)}&limit=1`,
         });
 
         const message = Array.isArray(rows) && rows.length ? rows[0] : null;
         if (!message) return error("Message not found.", 404);
 
+        const messageUser = await getUserById(env, message.user_id);
         const permissionMessage = {
           ...message,
-          user_role: message.users?.role || "user",
+          user_role: messageUser?.role || "user",
         };
 
         if (!canDeleteMessage(user, permissionMessage)) {
