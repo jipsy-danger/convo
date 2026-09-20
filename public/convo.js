@@ -1,7 +1,7 @@
 const WORKER_URL='https://convo-api.atityaramsureshmanickam.workers.dev';
 let currentPin=null,currentUser=null,currentChannels=[],activeChannel=null,hiddenPin='',superAdminMode=false,autoSubmitting=false,appLoading=false,messageSyncTimer=null,messageSyncInFlight=false,lastMessageSignature='',activePage=1,lastPage=1;
 try{currentPin=localStorage.getItem('convo_active_pin')||null;currentUser=JSON.parse(localStorage.getItem('convo_user')||'null')}catch(e){console.warn('Convo storage unavailable; starting fresh',e)}
-const $=id=>document.getElementById(id),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')],btnPagePrev=$('btnPagePrev'),btnPageNext=$('btnPageNext'),messagePageIndicator=$('messagePageIndicator');
+const $=id=>document.getElementById(id),messagePageMenu=$('messagePageMenu'),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')],btnPagePrev=$('btnPagePrev'),btnPageNext=$('btnPageNext'),messagePageIndicator=$('messagePageIndicator');
 const esc=value=>String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
 const formatTime=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'':d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
 function focusAccess(){pinInput.focus({preventScroll:true})}
@@ -29,8 +29,36 @@ async function loadChannels(preferredName=null){const d=await api('/channels');c
 function renderChannels(){const list=$('channelNavList');list.replaceChildren();currentChannels.forEach(channel=>{const b=document.createElement('button');b.type='button';b.className='channel-item'+(activeChannel?.id===channel.id?' active':'');b.textContent=`# ${channel.name}`;b.title=channel.description||channel.name;b.addEventListener('click',()=>selectChannel(channel.name));list.appendChild(b)})}
 function getMessageSignature(messages){return JSON.stringify(messages.map(m=>[m.id,m.channelId,m.pin,m.author,m.role,m.text,m.time||m.createdAt]));}
 function pageStorageKey(channel){return `convo_active_page_${channel?.id||channel?.name||'general'}`;}
+function renderPageMenu(){
+  if(!messagePageMenu)return;
+  messagePageMenu.replaceChildren();
+  for(let page=1;page<=lastPage;page++){
+    const button=document.createElement('button');
+    button.type='button';
+    button.className='message-page-option'+(page===activePage?' active':'');
+    button.setAttribute('role','option');
+    button.setAttribute('aria-selected',page===activePage?'true':'false');
+    button.textContent=String(page);
+    button.addEventListener('click',async e=>{e.stopPropagation();closePageMenu();await selectMessagePage(page)});
+    messagePageMenu.appendChild(button);
+  }
+}
+function closePageMenu(){
+  if(!messagePageMenu)return;
+  messagePageMenu.hidden=true;
+  messagePageIndicator?.setAttribute('aria-expanded','false');
+}
+function togglePageMenu(){
+  if(!messagePageMenu)return;
+  if(messagePageMenu.hidden){
+    renderPageMenu();
+    messagePageMenu.hidden=false;
+    messagePageIndicator?.setAttribute('aria-expanded','true');
+  }else closePageMenu();
+}
 function updatePageControls(){
   if(messagePageIndicator)messagePageIndicator.textContent=String(activePage);
+  renderPageMenu();
   if(btnPagePrev)btnPagePrev.disabled=activePage<=1;
   if(btnPageNext)btnPageNext.disabled=activePage>=lastPage&&lastMessageSignature==='[]';
 }
@@ -138,6 +166,9 @@ async function selectChannel(channelName,reportActivity=true){
 }
 btnPagePrev?.addEventListener('click',()=>selectMessagePage(activePage-1));
 btnPageNext?.addEventListener('click',()=>nextMessagePage());
+messagePageIndicator?.addEventListener('click',e=>{e.stopPropagation();togglePageMenu()});
+document.addEventListener('click',e=>{if(!e.target.closest('.message-page-controls'))closePageMenu()});
+window.addEventListener('keydown',e=>{if(e.key==='Escape')closePageMenu()});
 updatePageControls();
 function renderMessages(messages){const feed=$('messagesFeed');feed.replaceChildren();if(!messages.length){const e=document.createElement('div');e.className='state-message';e.textContent='No messages yet. Start the conversation.';feed.appendChild(e);return}messages.forEach(message=>{const article=document.createElement('article');article.className='message-card';const own=currentUser&&message.pin===currentUser.pin,canDelete=currentUser&&(currentUser.role==='superadmin'||own||(currentUser.role==='admin'&&message.role==='user'));article.innerHTML=`<div class="message-meta"><strong>${esc(message.author||'Unknown')}</strong><span>${esc(message.role||'user')}</span><time>${esc(formatTime(message.time||message.createdAt))}</time></div><div class="message-text">${esc(message.text)}</div>${canDelete?`<button type="button" class="message-delete" data-message-id="${Number(message.id)}">Delete</button>`:''}`;const del=article.querySelector('.message-delete');if(del)del.addEventListener('click',()=>deleteMessage(message.id));feed.appendChild(article)})}
 async function deleteMessage(id){if(!confirm('Delete this message?'))return;try{await api(`/messages/${encodeURIComponent(id)}`,{method:'DELETE'});await syncActiveMessages(true)}catch(err){alert(err.message||'Unable to delete message.')}}
