@@ -587,10 +587,6 @@ export default {
       }
 
       if (path === "/channels" && request.method === "POST") {
-        if (!["admin", "superadmin"].includes(user.role)) {
-          return error("Forbidden.", 403);
-        }
-
         const body = await request.json().catch(() => ({}));
         const channel = await createChannel(env, user, body.name, body.description);
 
