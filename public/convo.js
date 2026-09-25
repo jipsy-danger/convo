@@ -38,18 +38,28 @@ function renderPageMenu(){
     button.className='message-page-option'+(page===activePage?' active':'');
     button.setAttribute('role','option');
     button.setAttribute('aria-selected',page===activePage?'true':'false');
+    button.dataset.page=String(page);
     button.textContent=String(page);
     button.addEventListener('click',async e=>{e.stopPropagation();closePageMenu();await selectMessagePage(page)});
-    button.addEventListener('contextmenu',e=>{
-      e.preventDefault();
-      e.stopPropagation();
-      if(lastPage<=1)return;
-      closePageMenu();
-      deleteMessagePage(page);
-    });
     messagePageMenu.appendChild(button);
   }
 }
+function handlePageContextMenu(e){
+  const option=e.target.closest('.message-page-option');
+  if(!option||!messagePageMenu.contains(option))return;
+  e.preventDefault();
+  e.stopPropagation();
+  const page=Number(option.dataset.page);
+  closePageMenu();
+  deleteMessagePage(page);
+}
+messagePageMenu?.addEventListener('contextmenu',handlePageContextMenu);
+messagePageIndicator?.addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  closePageMenu();
+  deleteMessagePage(activePage);
+});
 function closePageMenu(){
   if(!messagePageMenu)return;
   messagePageMenu.hidden=true;
