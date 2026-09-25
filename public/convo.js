@@ -82,19 +82,31 @@ async function loadChannelPages(channel){
   saveActivePage();
   updatePageControls();
 }
+function getChatScrollArea(){
+  return document.querySelector('.chat-scroll-area');
+}
+function scrollMessagesToBottom(behavior='auto'){
+  const area=getChatScrollArea();
+  if(!area)return;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    area.scrollTo({top:area.scrollHeight,behavior});
+  }));
+}
 async function loadActivePage(preserveScroll=false){
   if(!activeChannel)return;
-  const feed=$('messagesFeed');
+  const area=getChatScrollArea();
   stopMessageSync();
   lastMessageSignature='';
+  const previousScroll=area?.scrollTop||0;
   try{
     const d=await api(`/messages?channel=${encodeURIComponent(activeChannel.name)}&page=${encodeURIComponent(activePage)}&sync=1`);
     const messages=Array.isArray(d.messages)?d.messages:[];
     lastMessageSignature=getMessageSignature(messages);
     renderMessages(messages);
-    feed.scrollTop=preserveScroll?0:feed.scrollHeight;
+    if(preserveScroll&&area)area.scrollTop=previousScroll;
+    else scrollMessagesToBottom();
   }catch(err){
-    feed.innerHTML='<div class="state-message">Unable to load this page.</div>';
+    $('messagesFeed').innerHTML='<div class="state-message">Unable to load this page.</div>';
     showAppError(err);
     return false;
   }
@@ -110,20 +122,23 @@ async function syncActiveMessages(preserveScroll=true){
     const messages=Array.isArray(d.messages)?d.messages:[];
     const signature=getMessageSignature(messages);
     if(signature!==lastMessageSignature){
-      const feed=$('messagesFeed');
-      const previousScroll=feed.scrollTop;
-      const wasAtBottom=feed.scrollHeight-feed.scrollTop-feed.clientHeight<48;
+      const area=getChatScrollArea();
+      const previousScroll=area?.scrollTop||0;
+      const wasAtBottom=area?area.scrollHeight-area.scrollTop-area.clientHeight<48:true;
       lastMessageSignature=signature;
       renderMessages(messages);
       updatePageControls();
       if(preserveScroll){
-        if(wasAtBottom)feed.scrollTop=feed.scrollHeight;
-        else feed.scrollTop=previousScroll;
-      }else feed.scrollTop=feed.scrollHeight;
+        if(wasAtBottom)scrollMessagesToBottom();
+        else if(area)area.scrollTop=previousScroll;
+      }else{
+        scrollMessagesToBottom();
+      }
     }
   }catch(err){console.warn('Background message sync failed.',err)}
   finally{messageSyncInFlight=false}
 }
+
 function startMessageSync(){stopMessageSync();messageSyncTimer=setInterval(()=>syncActiveMessages(true),3000)}
 async function deleteMessagePage(page){
   if(!activeChannel||lastPage<=1)return;
@@ -385,7 +400,7 @@ let fileExpiryTimer=setInterval(updateFileExpiryTimers,1000);
 updateFileExpiryTimers();
 
 async function deleteMessage(id){if(!confirm('Delete this message?'))return;try{await api(`/messages/${encodeURIComponent(id)}`,{method:'DELETE'});await syncActiveMessages(true)}catch(err){alert(err.message||'Unable to delete message.')}}
-const messageContextMenu=document.createElement('div');messageContextMenu.className='message-context-menu';messageContextMenu.hidden=true;messageContextMenu.innerHTML='<button type="button" class="message-context-copy">Copy Message</button>';document.body.appendChild(messageContextMenu);let contextCopyText='';function closeMessageContextMenu(){messageContextMenu.hidden=true;contextCopyText=''}async function copyContextMessage(){const text=contextCopyText;if(!text){closeMessageContextMenu();return}try{await navigator.clipboard.writeText(text)}catch{const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{document.execCommand('copy')}catch{}area.remove()}closeMessageContextMenu()}document.addEventListener('contextmenu',event=>{const article=event.target.closest('#messagesFeed .message-card');if(!article)return;const text=article.querySelector('.message-text')?.textContent||'';if(!text)return;event.preventDefault();contextCopyText=text;messageContextMenu.hidden=false;const w=132,h=42,left=Math.min(event.clientX,innerWidth-w-8),top=Math.min(event.clientY,innerHeight-h-8);messageContextMenu.style.left=`${Math.max(8,left)}px`;messageContextMenu.style.top=`${Math.max(8,top)}px`});messageContextMenu.querySelector('.message-context-copy').addEventListener('click',copyContextMessage);document.addEventListener('click',e=>{if(!messageContextMenu.contains(e.target))closeMessageContextMenu()});window.addEventListener('keydown',e=>{if(e.key==='Escape')closeMessageContextMenu()});window.addEventListener('scroll',closeMessageContextMenu,true);window.addEventListener('resize',closeMessageContextMenu);window.handlePostMessage=async function(){if(!currentUser||!activeChannel)return;const input=$('msgInput'),text=input.value.replace(/\r\n/g,'\n').replace(/\r/g,'\n');if(!text.trim())return;const button=document.querySelector('.btn-send');input.disabled=true;if(button)button.disabled=true;try{await api('/messages',{method:'POST',body:JSON.stringify({channel:activeChannel.name,page:activePage,text})});input.value='';input.style.height='';await syncActiveMessages(true);updatePageControls()}catch(err){alert(err.message||'Unable to post message.')}finally{input.disabled=false;if(button)button.disabled=false;requestAnimationFrame(()=>{input.focus({preventScroll:true});input.setSelectionRange(input.value.length,input.value.length)})}};
+const messageContextMenu=document.createElement('div');messageContextMenu.className='message-context-menu';messageContextMenu.hidden=true;messageContextMenu.innerHTML='<button type="button" class="message-context-copy">Copy Message</button>';document.body.appendChild(messageContextMenu);let contextCopyText='';function closeMessageContextMenu(){messageContextMenu.hidden=true;contextCopyText=''}async function copyContextMessage(){const text=contextCopyText;if(!text){closeMessageContextMenu();return}try{await navigator.clipboard.writeText(text)}catch{const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{document.execCommand('copy')}catch{}area.remove()}closeMessageContextMenu()}document.addEventListener('contextmenu',event=>{const article=event.target.closest('#messagesFeed .message-card');if(!article)return;const text=article.querySelector('.message-text')?.textContent||'';if(!text)return;event.preventDefault();contextCopyText=text;messageContextMenu.hidden=false;const w=132,h=42,left=Math.min(event.clientX,innerWidth-w-8),top=Math.min(event.clientY,innerHeight-h-8);messageContextMenu.style.left=`${Math.max(8,left)}px`;messageContextMenu.style.top=`${Math.max(8,top)}px`});messageContextMenu.querySelector('.message-context-copy').addEventListener('click',copyContextMessage);document.addEventListener('click',e=>{if(!messageContextMenu.contains(e.target))closeMessageContextMenu()});window.addEventListener('keydown',e=>{if(e.key==='Escape')closeMessageContextMenu()});window.addEventListener('scroll',closeMessageContextMenu,true);window.addEventListener('resize',closeMessageContextMenu);window.handlePostMessage=async function(){if(!currentUser||!activeChannel)return;const input=$('msgInput'),text=input.value.replace(/\r\n/g,'\n').replace(/\r/g,'\n');if(!text.trim())return;const button=document.querySelector('.btn-send');input.disabled=true;if(button)button.disabled=true;try{await api('/messages',{method:'POST',body:JSON.stringify({channel:activeChannel.name,page:activePage,text})});input.value='';input.style.height='';await syncActiveMessages(false);updatePageControls();scrollMessagesToBottom('smooth')}catch(err){alert(err.message||'Unable to post message.')}finally{input.disabled=false;if(button)button.disabled=false;requestAnimationFrame(()=>{input.focus({preventScroll:true});input.setSelectionRange(input.value.length,input.value.length)})}};
 const msgInput=$('msgInput');
 msgInput?.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&!e.shiftKey){
