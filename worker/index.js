@@ -7,6 +7,11 @@ const ALLOWED_ORIGIN = "*";
 const MAX_MESSAGE_LENGTH = 4000;
 const MAX_NAME_LENGTH = 40;
 const MAX_CHANNEL_LENGTH = 40;
+const ATTACHMENT_BUCKET = "convo-files";
+const FILE_LIFETIME_MS = 5 * 60 * 60 * 1000;
+const DOWNLOAD_TOKEN_TTL_MS = 5 * 60 * 1000;
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
+let lastAttachmentCleanupAt = 0;
 
 function cors(extra = {}) {
   return {
@@ -106,6 +111,168 @@ async function supabaseGetAll(env, table, select = "*") {
   return results;
 }
 
+function storageObjectUrl(env, bucket, objectPath) {
+  const safePath = String(objectPath || "")
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return `${env.SUPABASE_URL}/storage/v1/object/${encodeURIComponent(bucket)}/${safePath}`;
+}
+
+async function storageObjectRequest(env, bucket, objectPath, options = {}) {
+  const { headers = {}, ...rest } = options;
+  return fetch(storageObjectUrl(env, bucket, objectPath), {
+    ...rest,
+    headers: {
+      apikey: env.SUPABASE_SECRET_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SECRET_KEY}`,
+      ...headers,
+    },
+  });
+}
+
+async function deleteStorageObject(env, bucket, objectPath) {
+  const res = await storageObjectRequest(env, bucket, objectPath, { method: "DELETE" });
+  if (res.ok || res.status === 404) return;
+  const text = await res.text();
+  throw new Error(text || `Storage delete failed (${res.status})`);
+}
+
+function cleanFileName(value) {
+  const cleaned = String(value || "file")
+    .normalize("NFKC")
+    .replace(/[\\/:*?"<>|\u0000-\u001F]+/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/\.{2,}/g, ".")
+    .trim()
+    .slice(0, 160);
+  return cleaned || "file";
+}
+
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlToBytes(value) {
+  const raw = String(value || "");
+  const normalized = raw
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(Math.ceil(raw.length / 4) * 4, "=");
+  const binary = atob(normalized);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+async function getDownloadTokenKey(env) {
+  return crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(env.SUPABASE_SECRET_KEY),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"]
+  );
+}
+
+async function createDownloadToken(env, attachmentId) {
+  const payload = bytesToBase64Url(
+    new TextEncoder().encode(
+      JSON.stringify({
+        id: Number(attachmentId),
+        exp: Date.now() + DOWNLOAD_TOKEN_TTL_MS,
+      })
+    )
+  );
+  const key = await getDownloadTokenKey(env);
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(payload)
+  );
+  return `${payload}.${bytesToBase64Url(new Uint8Array(signature))}`;
+}
+
+async function verifyDownloadToken(env, token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+
+  let payload;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(parts[0])));
+  } catch {
+    return null;
+  }
+
+  if (!Number.isInteger(Number(payload?.id)) || Number(payload.id) < 1) return null;
+  if (!Number.isFinite(Number(payload?.exp)) || Number(payload.exp) <= Date.now()) {
+    return null;
+  }
+
+  const key = await getDownloadTokenKey(env);
+  const valid = await crypto.subtle.verify(
+    "HMAC",
+    key,
+    base64UrlToBytes(parts[1]),
+    new TextEncoder().encode(parts[0])
+  );
+  return valid ? payload : null;
+}
+
+async function cleanupExpiredAttachments(env) {
+  const now = new Date();
+  const rows = await supabaseFetch(env, "message_attachments", {
+    query:
+      `?select=id,bucket,object_path&expires_at=lte.${encodeURIComponent(
+        now.toISOString()
+      )}&deleted_at=is.null&limit=100`,
+  });
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    try {
+      await deleteStorageObject(
+        env,
+        row.bucket || ATTACHMENT_BUCKET,
+        row.object_path
+      );
+      await supabaseFetch(env, "message_attachments", {
+        method: "PATCH",
+        query: `?id=eq.${encodeURIComponent(row.id)}`,
+        body: { deleted_at: now.toISOString() },
+        headers: { Prefer: "return=minimal" },
+      });
+    } catch (err) {
+      console.warn("Expired file cleanup failed.", err);
+    }
+  }
+}
+
+function scheduleExpiredAttachmentCleanup(env, ctx) {
+  const now = Date.now();
+  if (now - lastAttachmentCleanupAt < 60 * 1000) return;
+  lastAttachmentCleanupAt = now;
+  const cleanup = cleanupExpiredAttachments(env).catch((err) =>
+    console.warn("Expired file cleanup sweep failed.", err)
+  );
+  if (ctx?.waitUntil) ctx.waitUntil(cleanup);
+}
+
+async function deleteAttachmentObjectsForMessages(env, messageIds) {
+  if (!Array.isArray(messageIds) || !messageIds.length) return;
+  const rows = await supabaseFetch(env, "message_attachments", {
+    query:
+      `?select=bucket,object_path&message_id=in.(${messageIds
+        .map((id) => encodeURIComponent(id))
+        .join(",")})&deleted_at=is.null`,
+  });
+  for (const row of Array.isArray(rows) ? rows : []) {
+    try {
+      await deleteStorageObject(env, row.bucket || ATTACHMENT_BUCKET, row.object_path);
+    } catch (err) {
+      console.warn("Message file deletion failed.", err);
+    }
+  }
+}
 /* PIN namespaces: normal users/admins and the Super Admin are separate. */
 async function getUserByPin(env, pin, namespace = "normal") {
   const roleFilter = namespace === "superadmin"
@@ -358,26 +525,56 @@ async function getMessagesForChannel(env, channelId, pageNumber = null) {
     (Array.isArray(authors) ? authors : []).map((author) => [String(author.id), author])
   );
 
+  const messageIds = rows.map((message) => message.id).filter(Boolean);
+  const attachments = messageIds.length
+    ? await supabaseFetch(env, "message_attachments", {
+        query:
+          `?select=id,message_id,file_name,mime_type,file_size,expires_at&message_id=in.(${messageIds
+            .map((id) => encodeURIComponent(id))
+            .join(",")})&expires_at=gt.${encodeURIComponent(
+            new Date().toISOString()
+          )}&deleted_at=is.null&order=id.asc`,
+      })
+    : [];
+
+  const attachmentsByMessage = new Map();
+  for (const attachment of Array.isArray(attachments) ? attachments : []) {
+    const key = String(attachment.message_id);
+    if (!attachmentsByMessage.has(key)) attachmentsByMessage.set(key, []);
+    attachmentsByMessage.get(key).push({
+      id: attachment.id,
+      fileName: attachment.file_name,
+      mimeType: attachment.mime_type,
+      fileSize: attachment.file_size,
+      expiresAt: attachment.expires_at,
+    });
+  }
+
   const channelRows = await supabaseFetch(env, "channels", {
     query: `?select=name&id=eq.${encodeURIComponent(channelId)}&limit=1`,
   });
   const channelName = Array.isArray(channelRows) && channelRows[0]?.name
     ? channelRows[0].name
     : "general";
-  return rows.map((message) => {
-    const author = authorById.get(String(message.user_id));
-    return {
-      id: message.id,
-      channel: channelName,
-      channelId: message.channel_id,
-      pin: author?.pin,
-      author: author?.name,
-      role: author?.role,
-      text: message.text,
-      time: message.created_at,
-      createdAt: message.created_at,
-    };
-  });
+
+  return rows
+    .map((message) => {
+      const author = authorById.get(String(message.user_id));
+      const files = attachmentsByMessage.get(String(message.id)) || [];
+      return {
+        id: message.id,
+        channel: channelName,
+        channelId: message.channel_id,
+        pin: author?.pin,
+        author: author?.name,
+        role: author?.role,
+        text: message.text,
+        files,
+        time: message.created_at,
+        createdAt: message.created_at,
+      };
+    })
+    .filter((message) => String(message.text || "") || message.files.length);
 }
 async function createChannel(env, user, name, description) {
   const safeName = String(name || "")
@@ -562,8 +759,222 @@ export default {
       }
 
       const isMessageSync = path === "/messages" && request.method === "GET" && url.searchParams.get("sync") === "1";
+      if (path === "/files/download" && request.method === "GET") {
+        const token = url.searchParams.get("token") || "";
+        const payload = await verifyDownloadToken(env, token);
+        if (!payload) return error("Invalid or expired download link.", 401);
+
+        const rows = await supabaseFetch(env, "message_attachments", {
+          query:
+            `?select=id,bucket,object_path,file_name,mime_type,file_size,expires_at,deleted_at&id=eq.${encodeURIComponent(
+              payload.id
+            )}&limit=1`,
+        });
+        const attachment = Array.isArray(rows) && rows.length ? rows[0] : null;
+        if (!attachment) return error("File not found.", 404);
+        if (
+          attachment.deleted_at ||
+          !attachment.expires_at ||
+          new Date(attachment.expires_at).getTime() <= Date.now()
+        ) {
+          return error("This file share has expired.", 410);
+        }
+
+        const storageResponse = await storageObjectRequest(
+          env,
+          attachment.bucket || ATTACHMENT_BUCKET,
+          attachment.object_path,
+          { method: "GET" }
+        );
+        if (!storageResponse.ok) {
+          if (storageResponse.status === 404) return error("File not found.", 404);
+          const text = await storageResponse.text();
+          return error(text || "Unable to retrieve file.", storageResponse.status);
+        }
+
+        const headers = new Headers();
+        headers.set(
+          "Content-Type",
+          attachment.mime_type || "application/octet-stream"
+        );
+        headers.set(
+          "Content-Disposition",
+          `attachment; filename*=UTF-8''${encodeURIComponent(attachment.file_name)}`
+        );
+        headers.set("Cache-Control", "private, no-store");
+        headers.set("X-Content-Type-Options", "nosniff");
+        if (attachment.file_size != null) {
+          headers.set("Content-Length", String(attachment.file_size));
+        }
+        headers.set("Access-Control-Allow-Origin", "*");
+        return new Response(storageResponse.body, {
+          status: 200,
+          headers,
+        });
+      }
+
       const user = await requireUser(env, request);
       if (!isMessageSync) await touchUserActivity(env, user.id);
+      scheduleExpiredAttachmentCleanup(env, ctx);
+
+      if (path === "/files/access" && request.method === "GET") {
+        const attachmentId = Number(url.searchParams.get("id"));
+        if (!Number.isInteger(attachmentId) || attachmentId < 1) {
+          return error("Valid file id is required.");
+        }
+
+        const rows = await supabaseFetch(env, "message_attachments", {
+          query:
+            `?select=id,expires_at,deleted_at&id=eq.${encodeURIComponent(
+              attachmentId
+            )}&limit=1`,
+        });
+        const attachment = Array.isArray(rows) && rows.length ? rows[0] : null;
+        if (!attachment) return error("File not found.", 404);
+        if (
+          attachment.deleted_at ||
+          !attachment.expires_at ||
+          new Date(attachment.expires_at).getTime() <= Date.now()
+        ) {
+          return error("This file share has expired.", 410);
+        }
+
+        const token = await createDownloadToken(env, attachment.id);
+        return response({
+          ok: true,
+          url: new URL(
+            `/files/download?token=${encodeURIComponent(token)}`,
+            request.url
+          ).toString(),
+        });
+      }
+
+      if (path === "/files" && request.method === "POST") {
+        const form = await request.formData();
+        const channelName = String(form.get("channel") || "").trim().toLowerCase();
+        const pageNumber = Number(form.get("page"));
+        const file = form.get("file");
+
+        if (!channelName) return error("Channel is required.");
+        if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+          return error("Valid message page is required.");
+        }
+        if (!file || typeof file.name !== "string" || typeof file.size !== "number") {
+          return error("A file is required.");
+        }
+        if (file.size > MAX_FILE_SIZE) {
+          return error("Files must be 50 MB or smaller.");
+        }
+
+        const channel = await getChannelByName(env, channelName);
+        if (!channel) return error("Channel not found.", 404);
+
+        const joined = await ensureChannelMember(env, channel.id, user.id);
+        if (joined) await recordActivity(env, user, channel.id, "JOINED");
+
+        const pages = await supabaseFetch(env, "channel_pages", {
+          query:
+            `?select=id,channel_id,page_number&channel_id=eq.${encodeURIComponent(
+              channel.id
+            )}&page_number=eq.${encodeURIComponent(pageNumber)}&limit=1`,
+        });
+        const page = Array.isArray(pages) && pages.length ? pages[0] : null;
+        if (!page) return error("Message page not found.", 404);
+
+        const fileName = cleanFileName(file.name);
+        const mimeType = file.type || "application/octet-stream";
+        const objectPath =
+          `channels/${channel.id}/pages/${page.id}/${crypto.randomUUID()}-${fileName}`;
+
+        const storageResponse = await storageObjectRequest(
+          env,
+          ATTACHMENT_BUCKET,
+          objectPath,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": mimeType,
+              "Cache-Control": "private, max-age=0, no-store",
+              "x-upsert": "false",
+            },
+            body: file,
+          }
+        );
+
+        if (!storageResponse.ok) {
+          const text = await storageResponse.text();
+          return error(text || "Unable to upload file.", storageResponse.status);
+        }
+
+        const expiresAt = new Date(Date.now() + FILE_LIFETIME_MS).toISOString();
+        let messageId = null;
+        try {
+          const insertedMessage = await supabaseFetch(env, "messages", {
+            method: "POST",
+            query: "?select=id,channel_id,user_id,page_id,text,created_at",
+            body: {
+              channel_id: channel.id,
+              user_id: user.id,
+              page_id: page.id,
+              text: "",
+            },
+            headers: { Prefer: "return=representation" },
+          });
+          const message = Array.isArray(insertedMessage)
+            ? insertedMessage[0]
+            : insertedMessage;
+          messageId = message?.id || null;
+          if (!messageId) throw new Error("Unable to create file message.");
+
+          await supabaseFetch(env, "message_attachments", {
+            method: "POST",
+            query:
+              "?select=id,message_id,file_name,mime_type,file_size,expires_at",
+            body: {
+              message_id: messageId,
+              user_id: user.id,
+              bucket: ATTACHMENT_BUCKET,
+              object_path: objectPath,
+              file_name: fileName,
+              mime_type: mimeType,
+              file_size: file.size,
+              expires_at: expiresAt,
+            },
+            headers: { Prefer: "return=representation" },
+          });
+        } catch (err) {
+          if (messageId) {
+            try {
+              await supabaseFetch(env, "messages", {
+                method: "DELETE",
+                query: `?id=eq.${encodeURIComponent(messageId)}`,
+                headers: { Prefer: "return=minimal" },
+              });
+            } catch (cleanupErr) {
+              console.warn("File message rollback failed.", cleanupErr);
+            }
+          }
+          try {
+            await deleteStorageObject(env, ATTACHMENT_BUCKET, objectPath);
+          } catch (cleanupErr) {
+            console.warn("File storage rollback failed.", cleanupErr);
+          }
+          throw err;
+        }
+
+        await recordActivity(env, user, channel.id, "POSTED");
+
+        return response({
+          ok: true,
+          file: {
+            name: fileName,
+            mimeType,
+            size: file.size,
+            expiresAt,
+          },
+          messageId,
+        });
+      }
 
       if (path === "/channels" && request.method === "GET") {
         let channels = await supabaseGetAll(
@@ -610,6 +1021,13 @@ export default {
           return error("Forbidden.", 403);
         }
 
+        const channelMessages = await supabaseFetch(env, "messages", {
+          query: `?select=id&channel_id=eq.${encodeURIComponent(id)}`,
+        });
+        await deleteAttachmentObjectsForMessages(
+          env,
+          (Array.isArray(channelMessages) ? channelMessages : []).map((item) => item.id)
+        );
         await supabaseFetch(env, "channels", {
           method: "DELETE",
           query: `?id=eq.${encodeURIComponent(id)}`,
@@ -681,6 +1099,14 @@ export default {
         const page = pages.find((item) => Number(item.page_number) === pageNumber);
         if (!page) return error("Message page not found.", 404);
 
+        const pageMessages = await supabaseFetch(env, "messages", {
+          query:
+            `?select=id&channel_id=eq.${encodeURIComponent(channel.id)}&page_id=eq.${encodeURIComponent(page.id)}`,
+        });
+        await deleteAttachmentObjectsForMessages(
+          env,
+          (Array.isArray(pageMessages) ? pageMessages : []).map((item) => item.id)
+        );
         await supabaseFetch(env, "messages", {
           method: "DELETE",
           query: `?channel_id=eq.${encodeURIComponent(channel.id)}&page_id=eq.${encodeURIComponent(page.id)}`,
@@ -828,6 +1254,7 @@ export default {
           return error("Forbidden.", 403);
         }
 
+        await deleteAttachmentObjectsForMessages(env, [message.id]);
         await supabaseFetch(env, "messages", {
           method: "DELETE",
           query: `?id=eq.${encodeURIComponent(id)}`,
