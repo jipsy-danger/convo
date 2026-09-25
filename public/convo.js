@@ -617,12 +617,7 @@ composerForm?.addEventListener('submit',e=>{
   e.stopPropagation();
   window.handlePostMessage?.();
 });
-msgInput?.addEventListener('keydown',e=>{
-  if(e.key!=='Enter'||e.shiftKey)return;
-  e.preventDefault();
-  e.stopPropagation();
-  window.handlePostMessage?.();
-});
+
 msgInput?.addEventListener('input',()=>{
   msgInput.style.height='auto';
   msgInput.style.height=Math.min(msgInput.scrollHeight,120)+'px';
