@@ -735,7 +735,7 @@ async function getAnalytics(env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     try {
       if (request.method === "OPTIONS") {
         return new Response(null, { status: 204, headers: cors() });
