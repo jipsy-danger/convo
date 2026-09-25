@@ -20,3 +20,29 @@ button,input{font:inherit}button{color:inherit}.state-message{padding:28px;text-
 @media(max-width:760px){.app-layout{grid-template-columns:190px minmax(0,1fr)}.sidebar{padding:14px 10px}.channel-header{padding:14px 16px}.chat-scroll-area{padding-left:14px;padding-right:14px}.super-admin-panel{width:100%}.auth-card{min-height:500px}.access-core{width:220px;height:220px}.core-center{inset:77px}.core-grid{inset:52px}.orbit-two{inset:20px}.orbit-three{inset:38px}}
 @media(max-width:560px){.app-layout{grid-template-columns:1fr}.sidebar{display:none}.channel-header{min-height:68px}.user-display-name{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.auth-card{width:100%;padding:24px 16px}.auth-card:after{width:330px;height:330px}.access-core{width:200px;height:200px}.core-center{inset:70px}.core-grid{inset:48px}.orbit-two{inset:18px}.orbit-three{inset:34px}.hud-enter{margin-top:18px}.hud-pin-input{width:210px!important}.super-panel-stats{grid-template-columns:repeat(2,1fr)}}
 .message-page-controls{display:flex;align-items:center;justify-content:flex-end;gap:4px;margin-top:5px}.header-user-stack{display:flex;flex-direction:column;align-items:flex-end;gap:1px}.page-nav-btn{width:25px;height:23px;padding:0;border:1px solid var(--line-strong);border-radius:5px;background:#11151a;color:#7edcff;font-size:.72rem;line-height:1;cursor:pointer}.page-nav-btn:hover:not(:disabled){border-color:rgba(56,189,248,.55);background:#14202a;color:#a8eaff}.page-nav-btn:disabled{opacity:.32;cursor:default}.page-nav-indicator{min-width:18px;text-align:center;color:#626a72;font-size:.58rem;line-height:23px}
+/* ephemeral shared files */
+.file-upload-queue{max-width:900px;margin:0 auto 6px;display:flex;flex-direction:column;gap:5px}
+.file-upload-row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:5px 12px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:rgba(17,19,24,.96);box-shadow:0 7px 18px rgba(0,0,0,.18)}
+.file-upload-main{min-width:0;display:flex;align-items:center;gap:8px}
+.file-upload-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d9dee2;font-size:.72rem;font-weight:550}
+.file-upload-size{flex:0 0 auto;color:#626a72;font-size:.6rem}
+.file-upload-right{display:flex;align-items:center;gap:8px}
+.file-upload-status{color:#7edcff;font-family:var(--font-mono);font-size:.58rem;white-space:nowrap}
+.file-upload-row.failed .file-upload-status{color:#e79aa0}
+.file-upload-track{grid-column:1/-1;height:2px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden}
+.file-upload-bar{display:block;width:0;height:100%;border-radius:inherit;background:#38bdf8;transition:width .15s ease}
+.file-upload-row.failed .file-upload-bar{background:#ef6b73}
+.file-upload-queue[hidden]{display:none}
+.shared-file{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:9px;padding:9px 10px;border:1px solid var(--line-strong);border-radius:7px;background:#0d1014}
+.shared-file-main{min-width:0;display:flex;align-items:center;gap:10px}
+.shared-file-icon{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border:1px solid rgba(56,189,248,.22);border-radius:6px;background:#101d24;color:#72d7ff;font-family:var(--font-mono);font-size:.48rem;letter-spacing:.05em}
+.shared-file-copy{min-width:0;display:flex;flex-direction:column;gap:2px}
+.shared-file-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e3e7ea;font-size:.76rem;font-weight:600}
+.shared-file-copy span{color:#626a72;font-size:.6rem}
+.shared-file-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:0 0 auto}
+.file-expiry{min-width:68px;color:#7edcff;font-family:var(--font-mono);font-size:.57rem;text-align:right;white-space:nowrap}
+.file-expiry.expired{color:#8b7074}
+.file-download{border:1px solid rgba(56,189,248,.24);border-radius:5px;background:#111a20;color:#8bddff;padding:5px 8px;font-size:.61rem;cursor:pointer}
+.file-download:hover:not(:disabled){border-color:rgba(56,189,248,.5);background:#152630;color:#c7f1ff}
+.file-download:disabled{opacity:.42;cursor:default}
+@media(max-width:560px){.file-upload-queue{margin-left:0;margin-right:0}.shared-file{align-items:flex-start;flex-direction:column}.shared-file-actions{width:100%;justify-content:flex-end}.file-expiry{margin-right:auto}.file-upload-right{max-width:46vw;overflow:hidden}}
