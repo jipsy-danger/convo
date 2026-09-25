@@ -157,9 +157,106 @@ async function fallbackMessages(request, env) {
   });
 }
 
+function validPin(pin) {
+  return /^\\d{4}$/.test(String(pin || ""));
+}
+
+async function requireDirectUser(request, env) {
+  const pin = request.headers.get("X-Convo-Pin") || "";
+  if (!validPin(pin)) throw Object.assign(new Error("Unauthorized"), { status: 401 });
+
+  const superAdmin = request.headers.get("X-Convo-SuperAdmin") === "true";
+  const roleFilter = superAdmin ? "&role=eq.superadmin" : "&role=neq.superadmin";
+  const users = await supabaseFetch(
+    env,
+    "users",
+    `?select=id,pin,name,role&pin=eq.${encodeURIComponent(pin)}${roleFilter}&limit=1`
+  );
+  const user = Array.isArray(users) ? users[0] : null;
+  if (!user) throw Object.assign(new Error("Unauthorized"), { status: 401 });
+  return user;
+}
+
+async function directCreateChannel(request, env) {
+  const user = await requireDirectUser(request, env);
+  const body = await request.json().catch(() => ({}));
+  const name = String(body.name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  const description = String(body.description || "Project discussion")
+    .trim()
+    .replace(/\\s+/g, " ")
+    .slice(0, 40);
+
+  if (!name || name === "general") {
+    return response({ ok: false, error: "Choose a valid channel name." }, 400);
+  }
+
+  const existing = await supabaseFetch(
+    env,
+    "channels",
+    `?select=id,name,description,created_by,created_at&name=eq.${encodeURIComponent(name)}&limit=1`
+  );
+  if (Array.isArray(existing) && existing.length) {
+    return response({ ok: false, error: "Channel already exists." }, 409);
+  }
+
+  const inserted = await supabaseFetch(env, "channels", {
+    method: "POST",
+    query: "?select=id,name,description,created_by,created_at",
+    body: {
+      name,
+      description: description || "Project discussion",
+      created_by: user.id,
+    },
+    headers: { Prefer: "return=representation" },
+  });
+  const channel = Array.isArray(inserted) ? inserted[0] : inserted;
+
+  const member = await supabaseFetch(env, "channel_members", {
+    query:
+      `?select=channel_id,user_id&channel_id=eq.${encodeURIComponent(channel.id)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`,
+  });
+  if (!Array.isArray(member) || !member.length) {
+    await supabaseFetch(env, "channel_members", {
+      method: "POST",
+      body: { channel_id: channel.id, user_id: user.id },
+      headers: {
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+    });
+  }
+
+  return response({
+    ok: true,
+    channel: {
+      id: channel.id,
+      name: channel.name,
+      description: channel.description,
+      createdBy: channel.created_by,
+      createdAt: channel.created_at,
+    },
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/channels" && request.method === "POST") {
+      try {
+        if (!env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY) {
+          return response({ ok: false, error: "Supabase environment variables are not configured." }, 500);
+        }
+        return await directCreateChannel(request, env);
+      } catch (err) {
+        console.error("Direct channel create failed", err);
+        return response({ ok: false, error: err?.message || "Unable to create channel." }, err?.status || 500);
+      }
+    }
 
     if (url.pathname === "/messages" && request.method === "GET") {
       const coreResponse = await core.fetch(request, env, ctx);
