@@ -71,10 +71,30 @@ async function fallbackMessages(request, env) {
   const channel = Array.isArray(channels) ? channels[0] : null;
   if (!channel) return response({ ok: true, messages: [] });
 
+  const requestedPage = Number(url.searchParams.get("page"));
+  let page = null;
+  if (Number.isInteger(requestedPage) && requestedPage > 0) {
+    const pages = await supabaseFetch(
+      env,
+      "channel_pages",
+      `?select=id,page_number&channel_id=eq.${encodeURIComponent(channel.id)}&page_number=eq.${encodeURIComponent(requestedPage)}&limit=1`
+    );
+    page = Array.isArray(pages) ? pages[0] : null;
+  }
+  if (!page) {
+    const pages = await supabaseFetch(
+      env,
+      "channel_pages",
+      `?select=id,page_number&channel_id=eq.${encodeURIComponent(channel.id)}&order=page_number.desc&limit=1`
+    );
+    page = Array.isArray(pages) ? pages[0] : null;
+  }
+  if (!page) return response({ ok: true, messages: [] });
+
   const rows = await supabaseFetch(
     env,
     "messages",
-    `?select=id,channel_id,user_id,text,created_at&channel_id=eq.${encodeURIComponent(channel.id)}&order=created_at.asc&limit=300`
+    `?select=id,channel_id,user_id,text,created_at&channel_id=eq.${encodeURIComponent(channel.id)}&page_id=eq.${encodeURIComponent(page.id)}&order=created_at.asc&limit=300`
   );
   const messages = Array.isArray(rows) ? rows : [];
   const userIds = [...new Set(messages.map((message) => message.user_id).filter(Boolean))];
@@ -88,24 +108,52 @@ async function fallbackMessages(request, env) {
     );
   }
 
-  const authorById = new Map((Array.isArray(authors) ? authors : []).map((author) => [String(author.id), author]));
+  const attachmentRows = messages.length
+    ? await supabaseFetch(
+        env,
+        "message_attachments",
+        `?select=id,message_id,file_name,mime_type,file_size,expires_at&message_id=in.(${messages
+          .map((message) => encodeURIComponent(message.id))
+          .join(",")})&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&deleted_at=is.null&order=id.asc`
+      )
+    : [];
+  const attachmentByMessage = new Map();
+  for (const attachment of Array.isArray(attachmentRows) ? attachmentRows : []) {
+    const key = String(attachment.message_id);
+    if (!attachmentByMessage.has(key)) attachmentByMessage.set(key, []);
+    attachmentByMessage.get(key).push({
+      id: attachment.id,
+      fileName: attachment.file_name,
+      mimeType: attachment.mime_type,
+      fileSize: attachment.file_size,
+      expiresAt: attachment.expires_at,
+    });
+  }
+
+  const authorById = new Map(
+    (Array.isArray(authors) ? authors : []).map((author) => [String(author.id), author])
+  );
 
   return response({
     ok: true,
-    messages: messages.map((message) => {
-      const author = authorById.get(String(message.user_id));
-      return {
-        id: message.id,
-        channel: channel.name,
-        channelId: message.channel_id,
-        pin: author?.pin,
-        author: author?.name,
-        role: author?.role,
-        text: message.text,
-        time: message.created_at,
-        createdAt: message.created_at,
-      };
-    }),
+    messages: messages
+      .map((message) => {
+        const author = authorById.get(String(message.user_id));
+        const files = attachmentByMessage.get(String(message.id)) || [];
+        return {
+          id: message.id,
+          channel: channel.name,
+          channelId: message.channel_id,
+          pin: author?.pin,
+          author: author?.name,
+          role: author?.role,
+          text: message.text,
+          files,
+          time: message.created_at,
+          createdAt: message.created_at,
+        };
+      })
+      .filter((message) => String(message.text || "") || message.files.length),
   });
 }
 
