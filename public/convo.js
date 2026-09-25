@@ -1,7 +1,7 @@
 const WORKER_URL='https://convo-api.atityaramsureshmanickam.workers.dev';
 let currentPin=null,currentUser=null,currentChannels=[],activeChannel=null,hiddenPin='',superAdminMode=false,autoSubmitting=false,appLoading=false,messageSyncTimer=null,messageSyncInFlight=false,lastMessageSignature='',activePage=1,lastPage=1;
 try{currentPin=localStorage.getItem('convo_active_pin')||null;currentUser=JSON.parse(localStorage.getItem('convo_user')||'null')}catch(e){console.warn('Convo storage unavailable; starting fresh',e)}
-const $=id=>document.getElementById(id),messagePageMenu=$('messagePageMenu'),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')],btnPagePrev=$('btnPagePrev'),btnPageNext=$('btnPageNext'),messagePageIndicator=$('messagePageIndicator');
+const $=id=>document.getElementById(id),messagePageMenu=$('messagePageMenu'),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')],btnPagePrev=$('btnPagePrev'),btnPageNext=$('btnPageNext'),messagePageIndicator=$('messagePageIndicator'),btnComposerPlus=$('btnComposerPlus'),fileInput=$('fileInput'),fileUploadQueue=$('fileUploadQueue');
 const esc=value=>String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
 const formatTime=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'':d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
 function focusAccess(){pinInput.focus({preventScroll:true})}
@@ -195,7 +195,191 @@ messagePageIndicator?.addEventListener('click',e=>{e.stopPropagation();togglePag
 document.addEventListener('click',e=>{if(!e.target.closest('.message-page-controls'))closePageMenu()});
 window.addEventListener('keydown',e=>{if(e.key==='Escape')closePageMenu()});
 updatePageControls();
-function renderMessages(messages){const feed=$('messagesFeed');feed.replaceChildren();if(!messages.length){const e=document.createElement('div');e.className='state-message';e.textContent='No messages yet. Start the conversation.';feed.appendChild(e);return}messages.forEach(message=>{const article=document.createElement('article');article.className='message-card';const own=currentUser&&message.pin===currentUser.pin,canDelete=currentUser&&(currentUser.role==='superadmin'||own||(currentUser.role==='admin'&&message.role==='user'));article.innerHTML=`<div class="message-meta"><strong>${esc(message.author||'Unknown')}</strong><span>${esc(message.role||'user')}</span><time>${esc(formatTime(message.time||message.createdAt))}</time></div><div class="message-text">${esc(message.text)}</div>${canDelete?`<button type="button" class="message-delete" data-message-id="${Number(message.id)}">Delete</button>`:''}`;const del=article.querySelector('.message-delete');if(del)del.addEventListener('click',()=>deleteMessage(message.id));feed.appendChild(article)})}
+function renderMessages(messages){
+  const feed=$('messagesFeed');
+  feed.replaceChildren();
+  if(!messages.length){
+    const e=document.createElement('div');
+    e.className='state-message';
+    e.textContent='No messages yet. Start the conversation.';
+    feed.appendChild(e);
+    updateFileExpiryTimers();
+    return
+  }
+  messages.forEach(message=>{
+    const article=document.createElement('article');
+    article.className='message-card';
+    const own=currentUser&&message.pin===currentUser.pin,
+      canDelete=currentUser&&(currentUser.role==='superadmin'||own||(currentUser.role==='admin'&&message.role==='user'));
+    const files=Array.isArray(message.files)?message.files:[];
+    const fileHtml=files.map(file=>`<div class="shared-file"><div class="shared-file-main"><div class="shared-file-icon">FILE</div><div class="shared-file-copy"><strong>${esc(file.fileName||'file')}</strong><span>${esc(formatFileSize(file.fileSize))}</span></div></div><div class="shared-file-actions"><span class="file-expiry" data-expires-at="${esc(file.expiresAt||'')}"></span><button type="button" class="file-download" data-attachment-id="${Number(file.id)}">Download</button></div></div>`).join('');
+    const textHtml=String(message.text||'')?`<div class="message-text">${esc(message.text)}</div>`:'';
+    article.innerHTML=`<div class="message-meta"><strong>${esc(message.author||'Unknown')}</strong><span>${esc(message.role||'user')}</span><time>${esc(formatTime(message.time||message.createdAt))}</time></div>${textHtml}${fileHtml}${canDelete?`<button type="button" class="message-delete" data-message-id="${Number(message.id)}">Delete</button>`:''} `;
+    const del=article.querySelector('.message-delete');
+    if(del)del.addEventListener('click',()=>deleteMessage(message.id));
+    article.querySelectorAll('.file-download').forEach(button=>button.addEventListener('click',()=>downloadAttachment(Number(button.dataset.attachmentId),button)));
+    feed.appendChild(article)
+  });
+  updateFileExpiryTimers();
+}
+function formatFileSize(bytes){
+  const value=Number(bytes)||0;
+  if(value<1024)return `${value} B`;
+  const units=['KB','MB','GB','TB'];
+  let size=value;
+  let index=-1;
+  do{size/=1024;index++}while(size>=1024&&index<units.length-1);
+  return `${size.toFixed(size>=10?0:1)} ${units[index]}`;
+}
+
+function formatFileCountdown(milliseconds){
+  const total=Math.max(0,Math.ceil(milliseconds/1000));
+  const hours=Math.floor(total/3600);
+  const minutes=Math.floor((total%3600)/60);
+  const seconds=total%60;
+  return `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+}
+
+function updateFileExpiryTimers(){
+  document.querySelectorAll('.file-expiry[data-expires-at]').forEach(timer=>{
+    const expires=Date.parse(timer.dataset.expiresAt||'');
+    const card=timer.closest('.shared-file');
+    const button=card?.querySelector('.file-download');
+    if(!Number.isFinite(expires))return;
+    const remaining=expires-Date.now();
+    if(remaining<=0){
+      timer.textContent='Expired';
+      timer.classList.add('expired');
+      if(button){button.disabled=true;button.textContent='Expired'}
+      return
+    }
+    timer.textContent=formatFileCountdown(remaining);
+    timer.classList.remove('expired');
+    if(button){button.disabled=false;button.textContent='Download'}
+  });
+}
+
+async function downloadAttachment(id,button){
+  if(!id||button?.disabled)return;
+  const original=button?.textContent||'Download';
+  if(button){button.disabled=true;button.textContent='Preparing…'}
+  try{
+    const d=await api(`/files/access?id=${encodeURIComponent(id)}`);
+    if(!d.url)throw new Error('Unable to prepare the file download.');
+    window.location.href=d.url;
+  }catch(err){
+    if(button){button.disabled=false;button.textContent=original}
+    alert(err.message||'Unable to download file.')
+  }
+}
+
+function createUploadEntry(file){
+  const row=document.createElement('div');
+  row.className='file-upload-row';
+  const main=document.createElement('div');
+  main.className='file-upload-main';
+  const name=document.createElement('strong');
+  name.className='file-upload-name';
+  name.textContent=file.name;
+  const size=document.createElement('span');
+  size.className='file-upload-size';
+  size.textContent=formatFileSize(file.size);
+  main.append(name,size);
+  const status=document.createElement('span');
+  status.className='file-upload-status';
+  status.textContent='Queued';
+  const track=document.createElement('div');
+  track.className='file-upload-track';
+  const bar=document.createElement('span');
+  bar.className='file-upload-bar';
+  track.appendChild(bar);
+  const right=document.createElement('div');
+  right.className='file-upload-right';
+  right.append(status);
+  row.append(main,right,track);
+  fileUploadQueue.appendChild(row);
+  fileUploadQueue.hidden=false;
+  return {row,status,bar}
+}
+
+function setUploadState(entry,label,percent,failed=false){
+  entry.status.textContent=label;
+  entry.bar.style.width=`${Math.max(0,Math.min(100,percent))}%`;
+  entry.row.classList.toggle('failed',failed);
+}
+
+function uploadFileWithProgress(file,channelName,pageNumber,pin,isSuperAdmin,entry){
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST',`${WORKER_URL}/files`,true);
+    xhr.responseType='text';
+    xhr.timeout=30*60*1000;
+    xhr.upload.addEventListener('progress',event=>{
+      const percent=event.lengthComputable?Math.round((event.loaded/event.total)*100):0;
+      setUploadState(entry,`Uploading ${percent}%`,percent);
+    });
+    xhr.onload=()=>{
+      let data={};
+      try{data=xhr.responseText?JSON.parse(xhr.responseText):{}}catch{data={error:xhr.responseText}}
+      if(xhr.status>=200&&xhr.status<300){
+        setUploadState(entry,'Posted',100);
+        resolve(data);
+      }else{
+        reject(new Error(data.error||`Upload failed (${xhr.status})`));
+      }
+    };
+    xhr.onerror=()=>reject(new Error('Network error while uploading file.'));
+    xhr.ontimeout=()=>reject(new Error('File upload timed out.'));
+    if(pin)xhr.setRequestHeader('X-Convo-Pin',pin);
+    if(isSuperAdmin&&pin==='4999')xhr.setRequestHeader('X-Convo-SuperAdmin','true');
+    const form=new FormData();
+    form.append('channel',channelName);
+    form.append('page',String(pageNumber));
+    form.append('file',file,file.name);
+    setUploadState(entry,'Uploading 0%',0);
+    xhr.send(form);
+  });
+}
+
+async function uploadSelectedFiles(files){
+  if(!currentUser||!activeChannel||!fileUploadQueue)return;
+  const channelName=activeChannel.name;
+  const pageNumber=activePage;
+  const pin=currentPin;
+  const isSuperAdmin=currentUser.role==='superadmin'&&pin==='4999';
+  const entries=[...files].map(createUploadEntry);
+  const maxSize=50*1024*1024;
+  await Promise.all(entries.map(async(entry,index)=>{
+    const file=files[index];
+    if(Number(file.size)>maxSize){
+      setUploadState(entry,'Failed • over 50 MB',0,true);
+      return
+    }
+    try{
+      await uploadFileWithProgress(file,channelName,pageNumber,pin,isSuperAdmin,entry);
+      await syncActiveMessages(true);
+      setTimeout(()=>{
+        entry.row.remove();
+        if(!fileUploadQueue.children.length)fileUploadQueue.hidden=true;
+      },1200);
+    }catch(err){
+      setUploadState(entry,err.message||'Upload failed.',0,true);
+    }
+  }));
+  await syncActiveMessages(true);
+  updatePageControls();
+}
+
+btnComposerPlus?.addEventListener('click',()=>{if(currentUser)fileInput?.click()});
+fileInput?.addEventListener('change',()=>{
+  const files=[...(fileInput.files||[])];
+  fileInput.value='';
+  if(files.length)uploadSelectedFiles(files);
+});
+
+let fileExpiryTimer=setInterval(updateFileExpiryTimers,1000);
+updateFileExpiryTimers();
+
 async function deleteMessage(id){if(!confirm('Delete this message?'))return;try{await api(`/messages/${encodeURIComponent(id)}`,{method:'DELETE'});await syncActiveMessages(true)}catch(err){alert(err.message||'Unable to delete message.')}}
 const messageContextMenu=document.createElement('div');messageContextMenu.className='message-context-menu';messageContextMenu.hidden=true;messageContextMenu.innerHTML='<button type="button" class="message-context-copy">Copy Message</button>';document.body.appendChild(messageContextMenu);let contextCopyText='';function closeMessageContextMenu(){messageContextMenu.hidden=true;contextCopyText=''}async function copyContextMessage(){const text=contextCopyText;if(!text){closeMessageContextMenu();return}try{await navigator.clipboard.writeText(text)}catch{const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{document.execCommand('copy')}catch{}area.remove()}closeMessageContextMenu()}document.addEventListener('contextmenu',event=>{const article=event.target.closest('#messagesFeed .message-card');if(!article)return;const text=article.querySelector('.message-text')?.textContent||'';if(!text)return;event.preventDefault();contextCopyText=text;messageContextMenu.hidden=false;const w=132,h=42,left=Math.min(event.clientX,innerWidth-w-8),top=Math.min(event.clientY,innerHeight-h-8);messageContextMenu.style.left=`${Math.max(8,left)}px`;messageContextMenu.style.top=`${Math.max(8,top)}px`});messageContextMenu.querySelector('.message-context-copy').addEventListener('click',copyContextMessage);document.addEventListener('click',e=>{if(!messageContextMenu.contains(e.target))closeMessageContextMenu()});window.addEventListener('keydown',e=>{if(e.key==='Escape')closeMessageContextMenu()});window.addEventListener('scroll',closeMessageContextMenu,true);window.addEventListener('resize',closeMessageContextMenu);window.handlePostMessage=async function(){if(!currentUser||!activeChannel)return;const input=$('msgInput'),text=input.value.replace(/\r\n/g,'\n').replace(/\r/g,'\n');if(!text.trim())return;const button=document.querySelector('.btn-send');input.disabled=true;if(button)button.disabled=true;try{await api('/messages',{method:'POST',body:JSON.stringify({channel:activeChannel.name,page:activePage,text})});input.value='';input.style.height='';await syncActiveMessages(true);updatePageControls()}catch(err){alert(err.message||'Unable to post message.')}finally{input.disabled=false;if(button)button.disabled=false;requestAnimationFrame(()=>{input.focus({preventScroll:true});input.setSelectionRange(input.value.length,input.value.length)})}};
 const msgInput=$('msgInput');
