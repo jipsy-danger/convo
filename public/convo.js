@@ -54,7 +54,31 @@ function handlePageContextMenu(e){
   deleteMessagePage(page);
 }
 messagePageMenu?.addEventListener('contextmenu',handlePageContextMenu);
+messagePageMenu?.addEventListener('pointerdown',e=>{
+  if(e.button!==2)return;
+  const option=e.target.closest('.message-page-option');
+  if(!option)return;
+  e.preventDefault();
+  e.stopPropagation();
+  closePageMenu();
+  deleteMessagePage(Number(option.dataset.page));
+});
 messagePageIndicator?.addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  closePageMenu();
+  deleteMessagePage(activePage);
+});
+messagePageIndicator?.addEventListener('pointerdown',e=>{
+  if(e.button!==2)return;
+  e.preventDefault();
+  e.stopPropagation();
+  closePageMenu();
+  deleteMessagePage(activePage);
+});
+document.querySelector('.message-page-controls')?.addEventListener('contextmenu',e=>{
+  if(e.target.closest('.message-page-option,.page-nav-btn'))return;
+  if(!e.target.closest('#messagePageIndicator'))return;
   e.preventDefault();
   e.stopPropagation();
   closePageMenu();
