@@ -11,7 +11,7 @@ import '../styles/access-fix.css';
 </head>
 <body>
   <div id="authOverlay" class="auth-overlay">
-    <form id="authForm" class="auth-card" novalidate onsubmit="return false;">
+    <form id="authForm" class="auth-card" novalidate>
       <div class="hud-brand">CONVO</div><div class="hud-status" id="hudStatus">ACCESS SYSTEM READY</div>
       <button id="accessCore" class="access-core" type="button" aria-label="Enter Convo"><span class="core-orbit orbit-one"></span><span class="core-orbit orbit-two"></span><span class="core-orbit orbit-three"></span><span class="core-grid"></span><span class="core-center"></span><span class="core-sweep"></span></button>
       <div class="hud-progress" aria-hidden="true"><span></span><span></span><span></span><span></span></div><div class="hud-hint" id="hudHint">ENTER ACCESS CODE</div>
@@ -29,6 +29,6 @@ import '../styles/access-fix.css';
   <div id="channelModal" class="channel-modal" hidden><div class="channel-modal-backdrop" data-close-channel-modal></div><form id="channelForm" class="channel-modal-card" novalidate><div class="channel-modal-title">Create Channel</div><div class="channel-modal-subtitle">Add a new team discussion channel.</div><div class="channel-modal-field"><label class="channel-modal-label" for="channelNameInput">Channel name</label><input id="channelNameInput" class="channel-modal-input" type="text" maxlength="40" placeholder="e.g. development" autocomplete="off" required /></div><div class="channel-modal-field"><label class="channel-modal-label" for="channelDescriptionInput">Description</label><input id="channelDescriptionInput" class="channel-modal-input" type="text" maxlength="40" placeholder="Project discussion" autocomplete="off" /></div><div id="channelModalError" class="channel-modal-error" aria-live="polite"></div><div class="channel-modal-actions"><button id="btnCancelChannel" class="channel-modal-button" type="button">Cancel</button><button id="btnSubmitChannel" class="channel-modal-button primary" type="submit">Create</button></div></form></div>
   <div id="renameChannelModal" class="channel-modal" hidden><div class="channel-modal-backdrop" data-close-rename-channel></div><form id="renameChannelForm" class="channel-modal-card" novalidate><div class="channel-modal-title">Rename Channel</div><div class="channel-modal-subtitle">Update the team channel name.</div><div class="channel-modal-field"><label class="channel-modal-label" for="renameChannelInput">Channel name</label><input id="renameChannelInput" class="channel-modal-input" type="text" maxlength="40" autocomplete="off" required /></div><div id="renameChannelError" class="channel-modal-error" aria-live="polite"></div><div class="channel-modal-actions"><button id="btnCancelRenameChannel" class="channel-modal-button" type="button">Cancel</button><button id="btnSubmitRenameChannel" class="channel-modal-button primary" type="submit">Save</button></div></form></div>
   <script is:inline src="/convo/convo.js?v=20260925-17"></script>
-  <script is:inline src="/convo/auth-submit-fix.js?v=20260925-3"></script>
+  <script is:inline src="/convo/auth-submit-fix.js?v=20260925-4"></script>
 </body>
 </html>
