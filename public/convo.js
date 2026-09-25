@@ -1,7 +1,7 @@
 const WORKER_URL='https://convo-api.atityaramsureshmanickam.workers.dev';
-let currentPin=null,currentUser=null,currentChannels=[],activeChannel=null,hiddenPin='',superAdminMode=false,autoSubmitting=false,appLoading=false,messageSyncTimer=null,messageSyncInFlight=false,lastMessageSignature='',activePage=1,lastPage=1;
+let currentPin=null,currentUser=null,currentChannels=[],activeChannel=null,hiddenPin='',superAdminMode=false,autoSubmitting=false,appLoading=false,messageSyncTimer=null,messageSyncInFlight=false,lastMessageSignature='',activePage=1,lastPage=1,replyTarget=null;
 try{currentPin=localStorage.getItem('convo_active_pin')||null;currentUser=JSON.parse(localStorage.getItem('convo_user')||'null')}catch(e){console.warn('Convo storage unavailable; starting fresh',e)}
-const $=id=>document.getElementById(id),messagePageMenu=$('messagePageMenu'),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')],btnPagePrev=$('btnPagePrev'),btnPageNext=$('btnPageNext'),messagePageIndicator=$('messagePageIndicator'),btnComposerPlus=$('btnComposerPlus'),fileInput=$('fileInput'),fileUploadQueue=$('fileUploadQueue'),btnRenameChannel=$('btnRenameChannel'),renameChannelModal=$('renameChannelModal'),renameChannelForm=$('renameChannelForm'),renameChannelInput=$('renameChannelInput'),renameChannelError=$('renameChannelError'),btnCancelRenameChannel=$('btnCancelRenameChannel'),btnSubmitRenameChannel=$('btnSubmitRenameChannel');
+const $=id=>document.getElementById(id),messagePageMenu=$('messagePageMenu'),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')],btnPagePrev=$('btnPagePrev'),btnPageNext=$('btnPageNext'),messagePageIndicator=$('messagePageIndicator'),btnComposerPlus=$('btnComposerPlus'),fileInput=$('fileInput'),fileUploadQueue=$('fileUploadQueue'),btnRenameChannel=$('btnRenameChannel'),renameChannelModal=$('renameChannelModal'),renameChannelForm=$('renameChannelForm'),renameChannelInput=$('renameChannelInput'),renameChannelError=$('renameChannelError'),btnCancelRenameChannel=$('btnCancelRenameChannel'),btnSubmitRenameChannel=$('btnSubmitRenameChannel'),replyComposer=$('replyComposer'),replyComposerAuthor=$('replyComposerAuthor'),replyComposerText=$('replyComposerText'),replyComposerClose=$('replyComposerClose');
 const esc=value=>String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
 const formatTime=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'':d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
 function focusAccess(){pinInput.focus({preventScroll:true})}
@@ -27,7 +27,7 @@ accessCore.addEventListener('click',e=>{e.preventDefault();if(hiddenPin.length==
 async function login(){if(hiddenPin.length!==4){hudStatus.textContent='ACCESS CODE REQUIRED';authOverlay.classList.add('denied');autoSubmitting=false;focusAccess();return}const name=nameInput.value.trim(),isSuperAdmin=superAdminMode&&hiddenPin==='4999';try{btnLogin.textContent='VERIFYING';btnLogin.disabled=true;hudStatus.textContent=isSuperAdmin?'ACCESS CORE VERIFYING':'IDENTITY VERIFYING';hudHint.textContent='AUTHENTICATING';authOverlay.classList.remove('denied');authOverlay.classList.add('checking');const r=await fetch(`${WORKER_URL}/auth`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:hiddenPin,name,isSuperAdmin})}),d=await r.json();if(!r.ok)throw new Error(d.error||'Authentication failed');if(d.isNew&&!name&&newUserNameBlock.style.display==='none'){newUserNameBlock.style.display='block';btnLogin.textContent='COMPLETE IDENTITY';btnLogin.disabled=false;hudStatus.textContent='NEW IDENTITY DETECTED';hudHint.textContent='ENTER DISPLAY NAME';authOverlay.classList.remove('checking');autoSubmitting=false;nameInput.focus();return}currentPin=d.assignedPin||hiddenPin;currentUser=d.user;try{localStorage.setItem('convo_active_pin',currentPin);localStorage.setItem('convo_user',JSON.stringify(currentUser))}catch(e){}hudStatus.textContent=d.assignedPin?'IDENTITY CREATED':'ACCESS GRANTED';hudHint.textContent=d.assignedPin?`NEW PIN: ${d.assignedPin}`:(isSuperAdmin?'SUPER ADMIN CORE ONLINE':'IDENTITY VERIFIED');authOverlay.classList.remove('checking','denied');authOverlay.classList.add('granted');setTimeout(()=>{authOverlay.style.display='none';initApp()},d.assignedPin?1800:360)}catch(err){console.error(err);hudStatus.textContent='ACCESS DENIED';hudHint.textContent='TRY AGAIN';authOverlay.classList.remove('checking','granted');authOverlay.classList.add('denied');btnLogin.textContent='INITIALIZE';autoSubmitting=false;hiddenPin='';pinInput.value='';updateHud();alert(err.message||'Failed to connect to authentication server.');focusAccess()}finally{btnLogin.disabled=false}}
 async function loadChannels(preferredName=null){const d=await api('/channels');currentChannels=Array.isArray(d.channels)?d.channels:[];renderChannels();const targetName=preferredName||activeChannel?.name||'general',target=currentChannels.find(c=>c.name===targetName)||currentChannels[0];if(target)await selectChannel(target.name,false)}
 function renderChannels(){const list=$('channelNavList');list.replaceChildren();const canManageChannel=['admin','superadmin'].includes(currentUser?.role);currentChannels.forEach(channel=>{const row=document.createElement('div');row.className='channel-item-row';const b=document.createElement('button');b.type='button';b.className='channel-item'+(activeChannel?.id===channel.id?' active':'');b.textContent=`# ${channel.name}`;b.title=channel.description||channel.name;b.addEventListener('click',()=>selectChannel(channel.name));row.appendChild(b);if(canManageChannel&&channel.name!=='general'){const del=document.createElement('button');del.type='button';del.className='channel-delete';del.setAttribute('aria-label',`Delete #${channel.name}`);del.title=`Delete #${channel.name}`;del.textContent='×';del.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();activeChannel?.id===channel.id?window.deleteCurrentGroup():deleteChannelById(channel.id)});row.appendChild(del)}list.appendChild(row)})}
-function getMessageSignature(messages){return JSON.stringify(messages.map(m=>[m.id,m.channelId,m.pin,m.author,m.role,m.text,m.time||m.createdAt]));}
+function getMessageSignature(messages){return JSON.stringify(messages.map(m=>[m.id,m.channelId,m.pin,m.author,m.role,m.text,m.quotedMessage?.id,m.time||m.createdAt]));}
 function pageStorageKey(channel){return `convo_active_page_${channel?.id||channel?.name||'general'}`;}
 function renderPageMenu(){
   if(!messagePageMenu)return;
@@ -219,6 +219,7 @@ async function selectChannel(channelName,reportActivity=true){
   if(!channel)return;
   stopMessageSync();
   activeChannel=channel;
+  clearReplyTarget();
   $('activeChannelHeading').textContent=`# ${channel.name}`;
   $('activeChannelDesc').textContent=channel.description||'Project discussion';
   const canManageChannel=['admin','superadmin'].includes(currentUser?.role);
@@ -248,6 +249,63 @@ messagePageIndicator?.addEventListener('click',e=>{e.stopPropagation();togglePag
 document.addEventListener('click',e=>{if(!e.target.closest('.message-page-controls'))closePageMenu()});
 window.addEventListener('keydown',e=>{if(e.key==='Escape')closePageMenu()});
 updatePageControls();
+function replyPreviewText(message){
+  const text=String(message?.text||'').replace(/\s+/g,' ').trim();
+  return text||((message?.files&&message.files.length)?'Attachment':'Message');
+}
+function clearReplyTarget(){
+  replyTarget=null;
+  if(replyComposer){replyComposer.hidden=true;replyComposer.setAttribute('hidden','');}
+  if(replyComposerAuthor)replyComposerAuthor.textContent='';
+  if(replyComposerText)replyComposerText.textContent='';
+}
+function setReplyTarget(message){
+  if(!message?.id)return;
+  replyTarget={id:Number(message.id),author:String(message.author||'Unknown'),text:String(message.text||''),files:Array.isArray(message.files)?message.files:[]};
+  if(replyComposerAuthor)replyComposerAuthor.textContent=replyTarget.author;
+  if(replyComposerText)replyComposerText.textContent=replyPreviewText(replyTarget);
+  if(replyComposer){replyComposer.hidden=false;replyComposer.removeAttribute('hidden');}
+  requestAnimationFrame(()=>{const input=$('msgInput');input?.focus({preventScroll:true});});
+}
+function resetMessageSwipe(article){
+  article.classList.remove('swiping');
+  article.style.transform='';
+}
+function bindMessageSwipe(article,message){
+  let startX=0,startY=0,active=false,blocked=false,moved=false,pointerId=null;
+  const reset=()=>{if(pointerId!==null){try{if(article.hasPointerCapture?.(pointerId))article.releasePointerCapture(pointerId)}catch(e){}}pointerId=null;active=false;blocked=false;moved=false;resetMessageSwipe(article)};
+  article.addEventListener('pointerdown',e=>{
+    if(e.button!==0||e.target.closest('button,a,input,textarea,select,[contenteditable="true"]'))return;
+    startX=e.clientX;startY=e.clientY;active=true;blocked=false;moved=false;pointerId=e.pointerId;
+  });
+  article.addEventListener('pointermove',e=>{
+    if(!active||blocked)return;
+    const dx=e.clientX-startX,dy=e.clientY-startY;
+    if(!moved){
+      if(Math.abs(dy)>10&&Math.abs(dy)>Math.abs(dx)){blocked=true;return;}
+      if(Math.abs(dx)<8)return;
+      moved=true;
+      article.classList.add('swiping');
+      try{article.setPointerCapture(pointerId)}catch(err){}
+    }
+    const distance=Math.max(-110,Math.min(110,dx));
+    article.style.transform='translateX('+distance+'px)';
+    if(Math.abs(dx)>10)e.preventDefault();
+  },{passive:false});
+  article.addEventListener('pointerup',e=>{
+    if(!active)return;
+    const dx=e.clientX-startX;
+    if(moved&&Math.abs(dx)>=60){
+      const target=message;
+      reset();
+      setReplyTarget(target);
+      return;
+    }
+    reset();
+  });
+  article.addEventListener('pointercancel',reset);
+  article.addEventListener('lostpointercapture',()=>{if(active)reset()});
+}
 function renderMessages(messages){
   const feed=$('messagesFeed');
   feed.replaceChildren();
@@ -267,10 +325,13 @@ function renderMessages(messages){
     const files=Array.isArray(message.files)?message.files:[];
     const fileHtml=files.map(file=>`<div class="shared-file"><div class="shared-file-main"><div class="shared-file-icon">FILE</div><div class="shared-file-copy"><strong>${esc(file.fileName||'file')}</strong><span>${esc(formatFileSize(file.fileSize))}</span></div></div><div class="shared-file-actions"><span class="file-expiry" data-expires-at="${esc(file.expiresAt||'')}"></span><button type="button" class="file-download" data-attachment-id="${Number(file.id)}">Download</button></div></div>`).join('');
     const textHtml=String(message.text||'')?`<div class="message-text">${esc(message.text)}</div>`:'';
-    article.innerHTML=`<div class="message-meta"><strong>${esc(message.author||'Unknown')}</strong><span>${esc(message.role||'user')}</span><time>${esc(formatTime(message.time||message.createdAt))}</time></div>${textHtml}${fileHtml}${canDelete?`<button type="button" class="message-delete" data-message-id="${Number(message.id)}">Delete</button>`:''} `;
+    const quoted=message.quotedMessage;
+    const quotedHtml=quoted?`<div class="message-reply-preview"><span class="message-reply-author">${esc(quoted.author||'Unknown')}</span><span class="message-reply-text">${esc(replyPreviewText(quoted))}</span></div>`:'';
+    article.innerHTML=`<div class="message-meta"><strong>${esc(message.author||'Unknown')}</strong><span>${esc(message.role||'user')}</span><time>${esc(formatTime(message.time||message.createdAt))}</time></div>${quotedHtml}${textHtml}${fileHtml}${canDelete?`<button type="button" class="message-delete" data-message-id="${Number(message.id)}">Delete</button>`:''} `;
     const del=article.querySelector('.message-delete');
     if(del)del.addEventListener('click',()=>deleteMessage(message.id));
     article.querySelectorAll('.file-download').forEach(button=>button.addEventListener('click',()=>downloadAttachment(Number(button.dataset.attachmentId),button)));
+    bindMessageSwipe(article,message);
     feed.appendChild(article)
   });
   updateFileExpiryTimers();
@@ -434,7 +495,8 @@ let fileExpiryTimer=setInterval(updateFileExpiryTimers,1000);
 updateFileExpiryTimers();
 
 async function deleteMessage(id){if(!confirm('Delete this message?'))return;try{await api('/messages/delete',{method:'POST',body:JSON.stringify({id})});await syncActiveMessages(true)}catch(err){alert(err.message||'Unable to delete message.')}}
-const messageContextMenu=document.createElement('div');messageContextMenu.className='message-context-menu';messageContextMenu.hidden=true;messageContextMenu.innerHTML='<button type="button" class="message-context-copy">Copy Message</button>';document.body.appendChild(messageContextMenu);let contextCopyText='';function closeMessageContextMenu(){messageContextMenu.hidden=true;contextCopyText=''}async function copyContextMessage(){const text=contextCopyText;if(!text){closeMessageContextMenu();return}try{await navigator.clipboard.writeText(text)}catch{const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{document.execCommand('copy')}catch{}area.remove()}closeMessageContextMenu()}document.addEventListener('contextmenu',event=>{const article=event.target.closest('#messagesFeed .message-card');if(!article)return;const text=article.querySelector('.message-text')?.textContent||'';if(!text)return;event.preventDefault();contextCopyText=text;messageContextMenu.hidden=false;const w=132,h=42,left=Math.min(event.clientX,innerWidth-w-8),top=Math.min(event.clientY,innerHeight-h-8);messageContextMenu.style.left=`${Math.max(8,left)}px`;messageContextMenu.style.top=`${Math.max(8,top)}px`});messageContextMenu.querySelector('.message-context-copy').addEventListener('click',copyContextMessage);document.addEventListener('click',e=>{if(!messageContextMenu.contains(e.target))closeMessageContextMenu()});window.addEventListener('keydown',e=>{if(e.key==='Escape')closeMessageContextMenu()});window.addEventListener('scroll',closeMessageContextMenu,true);window.addEventListener('resize',closeMessageContextMenu);window.handlePostMessage=async function(){if(!currentUser||!activeChannel)return;const input=$('msgInput'),text=input.value.replace(/\r\n/g,'\n').replace(/\r/g,'\n');if(!text.trim())return;const button=document.querySelector('.btn-send');input.disabled=true;if(button)button.disabled=true;try{await api('/messages',{method:'POST',body:JSON.stringify({channel:activeChannel.name,page:activePage,text})});input.value='';input.style.height='';await syncActiveMessages(false);updatePageControls();scrollMessagesToBottom('smooth')}catch(err){alert(err.message||'Unable to post message.')}finally{input.disabled=false;if(button)button.disabled=false;requestAnimationFrame(()=>{input.focus({preventScroll:true});input.setSelectionRange(input.value.length,input.value.length)})}};
+const messageContextMenu=document.createElement('div');messageContextMenu.className='message-context-menu';messageContextMenu.hidden=true;messageContextMenu.innerHTML='<button type="button" class="message-context-copy">Copy Message</button>';document.body.appendChild(messageContextMenu);let contextCopyText='';function closeMessageContextMenu(){messageContextMenu.hidden=true;contextCopyText=''}async function copyContextMessage(){const text=contextCopyText;if(!text){closeMessageContextMenu();return}try{await navigator.clipboard.writeText(text)}catch{const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{document.execCommand('copy')}catch{}area.remove()}closeMessageContextMenu()}document.addEventListener('contextmenu',event=>{const article=event.target.closest('#messagesFeed .message-card');if(!article)return;const text=article.querySelector('.message-text')?.textContent||'';if(!text)return;event.preventDefault();contextCopyText=text;messageContextMenu.hidden=false;const w=132,h=42,left=Math.min(event.clientX,innerWidth-w-8),top=Math.min(event.clientY,innerHeight-h-8);messageContextMenu.style.left=`${Math.max(8,left)}px`;messageContextMenu.style.top=`${Math.max(8,top)}px`});messageContextMenu.querySelector('.message-context-copy').addEventListener('click',copyContextMessage);document.addEventListener('click',e=>{if(!messageContextMenu.contains(e.target))closeMessageContextMenu()});window.addEventListener('keydown',e=>{if(e.key==='Escape')closeMessageContextMenu()});window.addEventListener('scroll',closeMessageContextMenu,true);window.addEventListener('resize',closeMessageContextMenu);window.handlePostMessage=async function(){if(!currentUser||!activeChannel)return;const input=$('msgInput'),text=input.value.replace(/\r\n/g,'\n').replace(/\r/g,'\n');if(!text.trim())return;const button=document.querySelector('.btn-send');input.disabled=true;if(button)button.disabled=true;try{await api('/messages',{method:'POST',body:JSON.stringify({channel:activeChannel.name,page:activePage,text,quotedMessageId:replyTarget?.id||null})});input.value='';input.style.height='';clearReplyTarget();await syncActiveMessages(false);updatePageControls();scrollMessagesToBottom('smooth')}catch(err){alert(err.message||'Unable to post message.')}finally{input.disabled=false;if(button)button.disabled=false;requestAnimationFrame(()=>{input.focus({preventScroll:true});input.setSelectionRange(input.value.length,input.value.length)})}};
+replyComposerClose?.addEventListener('click',()=>{clearReplyTarget();$('msgInput')?.focus({preventScroll:true})});
 const msgInput=$('msgInput');
 msgInput?.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&!e.shiftKey){
