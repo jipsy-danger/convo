@@ -1,7 +1,7 @@
 const WORKER_URL='https://convo-api.atityaramsureshmanickam.workers.dev';
 let currentPin=null,currentUser=null,currentChannels=[],activeChannel=null,hiddenPin='',superAdminMode=false,autoSubmitting=false,appLoading=false,messageSyncTimer=null,messageSyncInFlight=false,lastMessageSignature='',activePage=1,lastPage=1;
 try{currentPin=localStorage.getItem('convo_active_pin')||null;currentUser=JSON.parse(localStorage.getItem('convo_user')||'null')}catch(e){console.warn('Convo storage unavailable; starting fresh',e)}
-const $=id=>document.getElementById(id),messagePageMenu=$('messagePageMenu'),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')],btnPagePrev=$('btnPagePrev'),btnPageNext=$('btnPageNext'),messagePageIndicator=$('messagePageIndicator'),btnComposerPlus=$('btnComposerPlus'),fileInput=$('fileInput'),fileUploadQueue=$('fileUploadQueue');
+const $=id=>document.getElementById(id),messagePageMenu=$('messagePageMenu'),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')],btnPagePrev=$('btnPagePrev'),btnPageNext=$('btnPageNext'),messagePageIndicator=$('messagePageIndicator'),btnComposerPlus=$('btnComposerPlus'),fileInput=$('fileInput'),fileUploadQueue=$('fileUploadQueue'),btnRenameChannel=$('btnRenameChannel'),renameChannelModal=$('renameChannelModal'),renameChannelForm=$('renameChannelForm'),renameChannelInput=$('renameChannelInput'),renameChannelError=$('renameChannelError'),btnCancelRenameChannel=$('btnCancelRenameChannel'),btnSubmitRenameChannel=$('btnSubmitRenameChannel');
 const esc=value=>String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
 const formatTime=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'':d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
 function focusAccess(){pinInput.focus({preventScroll:true})}
@@ -20,7 +20,7 @@ window.addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();h
 pinInput.addEventListener('input',e=>{let value=String(e.target.value||'');if(superAdminJArmed&&!superAdminMode){if(value.toLowerCase().includes('j')){e.target.value='';confirmSuperAdminJ()}else e.target.value='';return}value=value.replace(/\D/g,'').slice(0,4);e.target.value=value;if(value!==hiddenPin){hiddenPin=value;autoSubmitting=false;authOverlay.classList.remove('denied');updateHud();if(hiddenPin.length===4&&!autoSubmitting){autoSubmitting=true;requestAnimationFrame(()=>authForm.requestSubmit())}}});
 btnLogout.addEventListener('click',handleLogout);
 function stopMessageSync(){if(messageSyncTimer!==null){clearInterval(messageSyncTimer);messageSyncTimer=null}messageSyncInFlight=false;lastMessageSignature=''}
-function handleLogout(){stopMessageSync();closeChannelModal();closeSuperAdminPanel();try{localStorage.removeItem('convo_active_pin');localStorage.removeItem('convo_user');sessionStorage.removeItem('convo_active_pin');sessionStorage.removeItem('convo_user')}catch(e){}currentPin=null;currentUser=null;currentChannels=[];activeChannel=null;hiddenPin='';resetSuperAdminArming();autoSubmitting=false;pinInput.value='';pinInput.type='password';pinInput.inputMode='numeric';nameInput.value='';newUserNameBlock.style.display='none';btnLogin.textContent='INITIALIZE';btnLogin.disabled=false;hudStatus.textContent='ACCESS SYSTEM READY';hudHint.textContent='ENTER ACCESS CODE';authOverlay.classList.remove('super-mode','granted','denied','checking');authOverlay.style.display='flex';updateHud();$('messagesFeed')?.replaceChildren();$('channelNavList')?.replaceChildren();$('userDisplayName').textContent='';$('btnDeleteGroup').style.display='none';$('btnCreateChannel').style.display='none';$('superAdminLauncher').hidden=true;requestAnimationFrame(focusAccess)}
+function handleLogout(){stopMessageSync();closeChannelModal();closeRenameChannelModal();closeSuperAdminPanel();try{localStorage.removeItem('convo_active_pin');localStorage.removeItem('convo_user');sessionStorage.removeItem('convo_active_pin');sessionStorage.removeItem('convo_user')}catch(e){}currentPin=null;currentUser=null;currentChannels=[];activeChannel=null;hiddenPin='';resetSuperAdminArming();autoSubmitting=false;pinInput.value='';pinInput.type='password';pinInput.inputMode='numeric';nameInput.value='';newUserNameBlock.style.display='none';btnLogin.textContent='INITIALIZE';btnLogin.disabled=false;hudStatus.textContent='ACCESS SYSTEM READY';hudHint.textContent='ENTER ACCESS CODE';authOverlay.classList.remove('super-mode','granted','denied','checking');authOverlay.style.display='flex';updateHud();$('messagesFeed')?.replaceChildren();$('channelNavList')?.replaceChildren();$('userDisplayName').textContent='';$('btnDeleteGroup').style.display='none';$('btnCreateChannel').style.display='none';$('superAdminLauncher').hidden=true;requestAnimationFrame(focusAccess)}
 function updateHud(){progressSegments.forEach((s,i)=>s.classList.toggle('filled',i<hiddenPin.length));accessCore.style.setProperty('--entry-progress',`${hiddenPin.length*25}%`)}
 authForm.addEventListener('submit',e=>{e.preventDefault();login()});
 accessCore.addEventListener('click',e=>{e.preventDefault();if(hiddenPin.length===4)authForm.requestSubmit();else focusAccess()});
@@ -172,7 +172,11 @@ async function selectChannel(channelName,reportActivity=true){
   activeChannel=channel;
   $('activeChannelHeading').textContent=`# ${channel.name}`;
   $('activeChannelDesc').textContent=channel.description||'Project discussion';
-  $('btnDeleteGroup').style.display=channel.name==='general'||!['admin','superadmin'].includes(currentUser?.role)?'none':'inline-flex';
+  const canManageChannel=['admin','superadmin'].includes(currentUser?.role);
+  if(btnRenameChannel){
+    btnRenameChannel.hidden=!canManageChannel||channel.name==='general';
+  }
+  $('btnDeleteGroup').style.display=channel.name==='general'||!canManageChannel?'none':'inline-flex';
   renderChannels();
   $('messagesFeed').innerHTML='<div class="state-message">Loading messages...</div>';
   try{
@@ -396,6 +400,52 @@ msgInput?.addEventListener('input',()=>{
 
 const channelModal=$('channelModal'),channelForm=$('channelForm'),channelNameInput=$('channelNameInput'),channelDescriptionInput=$('channelDescriptionInput'),channelModalError=$('channelModalError'),btnSubmitChannel=$('btnSubmitChannel');
 function closeChannelModal(){channelModal.hidden=true;channelForm.reset();channelModalError.textContent='';btnSubmitChannel.disabled=false;btnSubmitChannel.textContent='Create'}
+function closeRenameChannelModal(){
+  if(!renameChannelModal)return;
+  renameChannelModal.hidden=true;
+  renameChannelForm?.reset();
+  if(renameChannelError)renameChannelError.textContent='';
+  if(btnSubmitRenameChannel){
+    btnSubmitRenameChannel.disabled=false;
+    btnSubmitRenameChannel.textContent='Save';
+  }
+}
+function openRenameChannelModal(){
+  if(!activeChannel||!['admin','superadmin'].includes(currentUser?.role)||activeChannel.name==='general')return;
+  renameChannelModal.hidden=false;
+  renameChannelModal.removeAttribute('hidden');
+  renameChannelError.textContent='';
+  renameChannelInput.value=activeChannel.name;
+  requestAnimationFrame(()=>{renameChannelInput.focus();renameChannelInput.select()});
+}
+btnRenameChannel?.addEventListener('click',openRenameChannelModal);
+btnCancelRenameChannel?.addEventListener('click',closeRenameChannelModal);
+document.querySelector('[data-close-rename-channel]')?.addEventListener('click',closeRenameChannelModal);
+renameChannelForm?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(!activeChannel||!['admin','superadmin'].includes(currentUser?.role)||activeChannel.name==='general')return;
+  const name=renameChannelInput.value.trim();
+  if(!name){
+    renameChannelError.textContent='Channel name is required.';
+    renameChannelInput.focus();
+    return;
+  }
+  btnSubmitRenameChannel.disabled=true;
+  btnSubmitRenameChannel.textContent='Saving...';
+  renameChannelError.textContent='';
+  try{
+    const d=await api(`/channels?id=${encodeURIComponent(activeChannel.id)}`,{
+      method:'PUT',
+      body:JSON.stringify({name})
+    });
+    closeRenameChannelModal();
+    await loadChannels(d.channel?.name||name.toLowerCase());
+  }catch(err){
+    renameChannelError.textContent=err.message||'Unable to rename channel.';
+    btnSubmitRenameChannel.disabled=false;
+    btnSubmitRenameChannel.textContent='Save';
+  }
+});
 function openChannelModal(){
   if(!currentUser)return;
   channelModal.hidden=false;
