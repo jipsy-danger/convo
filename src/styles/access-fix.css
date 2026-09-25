@@ -7,20 +7,6 @@
 @keyframes access-admin-bump{0%{transform:perspective(700px) rotateX(3deg) scale(1)}42%{transform:perspective(700px) rotateX(3deg) scale(1.12)}72%{transform:perspective(700px) rotateX(3deg) scale(.982)}100%{transform:perspective(700px) rotateX(3deg) scale(1)}}
 @media(max-width:760px){.hud-pin-input{width:min(220px,72vw)!important}}
 
-/* Fast startup screen shown while the workspace hydrates. */
-.app-boot-screen{position:fixed!important;inset:0!important;z-index:1600!important;display:grid!important;place-items:center!important;background:radial-gradient(circle at 50% 38%,rgba(56,189,248,.045),transparent 34%),#080a0d!important;padding:24px!important}
-.app-boot-screen[hidden]{display:none!important}
-.app-boot-card{width:min(420px,calc(100vw - 40px))!important;padding:28px!important;border:1px solid rgba(115,130,145,.2)!important;border-radius:12px!important;background:rgba(14,17,21,.96)!important;box-shadow:0 24px 80px rgba(0,0,0,.5)!important;text-align:center!important}
-.app-boot-mark{width:38px;height:38px;margin:0 auto 12px;display:grid;place-items:center;border:1px solid rgba(56,189,248,.35);border-radius:8px;background:#101920;color:#7edcff;font-weight:800;font-size:1rem}
-.app-boot-kicker{color:#5f6972;font:600 .56rem/1 var(--font-mono);letter-spacing:.17em}
-.app-boot-status{margin-top:10px;color:#e4e8eb;font-size:.96rem;font-weight:700}
-.app-boot-detail{margin-top:6px;color:#6f7982;font-size:.72rem}
-.app-boot-track{height:2px;margin-top:20px;border-radius:2px;background:rgba(255,255,255,.07);overflow:hidden}
-.app-boot-track span{display:block;width:42%;height:100%;border-radius:inherit;background:#38bdf8;animation:appBootPulse 1.25s ease-in-out infinite}
-.app-boot-retry{margin-top:16px;border:1px solid rgba(56,189,248,.3);border-radius:6px;background:#10202a;color:#7edcff;padding:7px 14px;font-size:.68rem;cursor:pointer}
-.app-boot-retry:hover{background:#15303d;border-color:rgba(56,189,248,.5);color:#d2f6ff}
-@keyframes appBootPulse{0%{transform:translateX(-130%)}100%{transform:translateX(250%)}}
-
 /* Restore the message composer as a floating fixed bar at the bottom. */
 .input-dock{display:block!important;position:fixed!important;left:248px;right:0;bottom:0;z-index:900;padding:12px clamp(14px,3vw,34px) calc(12px + env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,rgba(10,11,13,.82) 32%,rgba(10,11,13,.96));pointer-events:none}
 .input-dock .input-container{pointer-events:auto}
