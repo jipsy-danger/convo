@@ -316,16 +316,42 @@ async function touchUserActivity(env, userId) {
   });
 }
 
+async function getBootstrapChannels(env) {
+  try {
+    let channels = await supabaseGetAll(env, "channels", "id,name,description,created_by,created_at");
+    if (!channels.length) channels = [await ensureGeneralChannel(env)];
+    return channels.map((channel) => ({
+      id: channel.id,
+      name: channel.name,
+      description: channel.description,
+      createdBy: channel.created_by,
+      createdAt: channel.created_at,
+    }));
+  } catch (err) {
+    console.warn("Bootstrap channel load failed.", err);
+    return [];
+  }
+}
+
 async function authenticate(env, pin, name, requestedSuperAdmin) {
   if (!validPin(pin)) return error("PIN must be exactly 4 digits.", 401);
 
   const namespace = requestedSuperAdmin ? "superadmin" : "normal";
   let user = await getUserByPin(env, pin, namespace);
+  const bootstrapPromise = getBootstrapChannels(env);
 
   if (user) {
-    await touchUserActivity(env, user.id);
-    user = await getUserById(env, user.id);
-    return response({ ok: true, isNew: false, user: formatUser(user) });
+    const [, refreshed] = await Promise.all([
+      touchUserActivity(env, user.id),
+      getUserById(env, user.id),
+    ]);
+    user = refreshed || user;
+    return response({
+      ok: true,
+      isNew: false,
+      user: formatUser(user),
+      channels: await bootstrapPromise,
+    });
   }
 
   if (requestedSuperAdmin) {
@@ -341,12 +367,17 @@ async function authenticate(env, pin, name, requestedSuperAdmin) {
     });
 
     user = Array.isArray(inserted) ? inserted[0] : inserted;
-    return response({ ok: true, isNew: true, user: formatUser(user) });
+    return response({
+      ok: true,
+      isNew: true,
+      user: formatUser(user),
+      channels: await bootstrapPromise,
+    });
   }
 
   /* Normal mode: 4999 is an ordinary user PIN and may coexist with the
      Super Admin's 4999 because the database namespace is role-scoped. */
-  if (!name) return response({ ok: true, isNew: true });
+  if (!name) return response({ ok: true, isNew: true, channels: await bootstrapPromise });
 
   const safeName = cleanName(name);
   if (!safeName) return error("Display name is required.");
@@ -359,7 +390,12 @@ async function authenticate(env, pin, name, requestedSuperAdmin) {
   });
 
   user = Array.isArray(inserted) ? inserted[0] : inserted;
-  return response({ ok: true, isNew: false, user: formatUser(user) });
+  return response({
+    ok: true,
+    isNew: false,
+    user: formatUser(user),
+    channels: await bootstrapPromise,
+  });
 }
 
 async function requireUser(env, request) {
