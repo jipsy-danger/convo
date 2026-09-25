@@ -17,13 +17,27 @@ function response(body, status = 200) {
   });
 }
 
-async function supabaseFetch(env, table, query = "") {
+async function supabaseFetch(env, table, queryOrOptions = "") {
+  const options =
+    typeof queryOrOptions === "string"
+      ? { query: queryOrOptions }
+      : queryOrOptions || {};
+  const {
+    method = "GET",
+    query = "",
+    body,
+    headers = {},
+  } = options;
+
   const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}${query}`, {
+    method,
     headers: {
       apikey: env.SUPABASE_SECRET_KEY,
       Authorization: `Bearer ${env.SUPABASE_SECRET_KEY}`,
       "Content-Type": "application/json",
+      ...headers,
     },
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
 
   const text = await res.text();
@@ -41,7 +55,7 @@ async function supabaseFetch(env, table, query = "") {
         : typeof data === "object" && data?.error
           ? data.error
           : text || `Supabase error ${res.status}`;
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: res.status });
   }
 
   return data;
@@ -158,7 +172,7 @@ async function fallbackMessages(request, env) {
 }
 
 function validPin(pin) {
-  return /^\\d{4}$/.test(String(pin || ""));
+  return /^\d{4}$/.test(String(pin || ""));
 }
 
 async function requireDirectUser(request, env) {
@@ -188,7 +202,7 @@ async function directCreateChannel(request, env) {
     .slice(0, 40);
   const description = String(body.description || "Project discussion")
     .trim()
-    .replace(/\\s+/g, " ")
+    .replace(/\s+/g, " ")
     .slice(0, 40);
 
   if (!name || name === "general") {
