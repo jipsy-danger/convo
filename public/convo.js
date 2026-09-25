@@ -323,7 +323,16 @@ function renderMessages(messages){
     const own=currentUser&&message.pin===currentUser.pin,
       canDelete=currentUser&&(currentUser.role==='superadmin'||own||(currentUser.role==='admin'&&message.role==='user'));
     const files=Array.isArray(message.files)?message.files:[];
-    const fileHtml=files.map(file=>`<div class="shared-file"><div class="shared-file-main"><div class="shared-file-icon">FILE</div><div class="shared-file-copy"><strong>${esc(file.fileName||'file')}</strong><span>${esc(formatFileSize(file.fileSize))}</span></div></div><div class="shared-file-actions"><span class="file-expiry" data-expires-at="${esc(file.expiresAt||'')}"></span><button type="button" class="file-download" data-attachment-id="${Number(file.id)}">Download</button></div></div>`).join('');
+    const fileHtml=files.map(file=>{
+      const image=String(file.mimeType||'').startsWith('image/');
+      return `<div class="shared-file${image?' shared-image-file':''}">
+        <div class="shared-file-top">
+          <div class="shared-file-main"><div class="shared-file-icon">FILE</div><div class="shared-file-copy"><strong>${esc(file.fileName||'file')}</strong><span>${esc(formatFileSize(file.fileSize))}</span></div></div>
+          <div class="shared-file-actions"><span class="file-expiry" data-expires-at="${esc(file.expiresAt||'')}"></span><button type="button" class="file-download" data-attachment-id="${Number(file.id)}">Download</button></div>
+        </div>
+        ${image?`<div class="shared-file-image-wrap" data-image-attachment-id="${Number(file.id)}"><span class="file-preview-loading">Loading preview…</span><img class="shared-file-image" alt="${esc(file.fileName||'Image preview')}" data-image-id="${Number(file.id)}" loading="eager" decoding="async" hidden></div>`:''}
+      </div>`;
+    }).join('');
     const textHtml=String(message.text||'')?`<div class="message-text">${esc(message.text)}</div>`:'';
     const quoted=message.quotedMessage;
     const quotedHtml=quoted?`<div class="message-reply-preview"><span class="message-reply-author">${esc(quoted.author||'Unknown')}</span><span class="message-reply-text">${esc(replyPreviewText(quoted))}</span></div>`:'';
@@ -331,6 +340,9 @@ function renderMessages(messages){
     const del=article.querySelector('.message-delete');
     if(del)del.addEventListener('click',()=>deleteMessage(message.id));
     article.querySelectorAll('.file-download').forEach(button=>button.addEventListener('click',()=>downloadAttachment(Number(button.dataset.attachmentId),button)));
+    article.querySelectorAll('.shared-file-image[data-image-id]').forEach(image=>{
+      loadImagePreview(Number(image.dataset.imageId),image,image.closest('.shared-file-image-wrap'));
+    });
     bindMessageSwipe(article,message);
     feed.appendChild(article)
   });
@@ -365,12 +377,44 @@ function updateFileExpiryTimers(){
       timer.textContent='Expired';
       timer.classList.add('expired');
       if(button){button.disabled=true;button.textContent='Expired'}
+      const image=card?.querySelector('.shared-file-image');
+      if(image){
+        image.removeAttribute('src');
+        image.hidden=true;
+        card.querySelector('.shared-file-image-wrap')?.classList.add('expired');
+      }
       return
     }
     timer.textContent=formatFileCountdown(remaining);
     timer.classList.remove('expired');
     if(button){button.disabled=false;button.textContent='Download'}
   });
+}
+
+async function loadImagePreview(id,image,wrap){
+  if(!id||!image)return;
+  try{
+    const d=await api(`/files/access?id=${encodeURIComponent(id)}`);
+    if(!d.url)throw new Error('Unable to prepare image preview.');
+    image.addEventListener('load',()=>{
+      image.hidden=false;
+      wrap?.classList.remove('loading');
+      wrap?.querySelector('.file-preview-loading')?.remove();
+    },{once:true});
+    image.addEventListener('error',()=>{
+      image.hidden=true;
+      wrap?.classList.add('failed');
+      const label=wrap?.querySelector('.file-preview-loading');
+      if(label)label.textContent='Preview unavailable';
+    },{once:true});
+    wrap?.classList.add('loading');
+    image.src=d.url;
+  }catch(err){
+    image.hidden=true;
+    wrap?.classList.add('failed');
+    const label=wrap?.querySelector('.file-preview-loading');
+    if(label)label.textContent='Preview unavailable';
+  }
 }
 
 async function downloadAttachment(id,button){
