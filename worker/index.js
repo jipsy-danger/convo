@@ -4,7 +4,7 @@ const JSON_HEADERS = {
 };
 
 const ALLOWED_ORIGIN = "*";
-const MAX_MESSAGE_LENGTH = 4000;
+const MAX_MESSAGE_LENGTH = 15000;
 const MAX_NAME_LENGTH = 40;
 const MAX_CHANNEL_LENGTH = 40;
 const ATTACHMENT_BUCKET = "convo-files";
