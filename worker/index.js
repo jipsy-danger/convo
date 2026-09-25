@@ -1013,6 +1013,65 @@ export default {
         });
       }
 
+      if (path === "/channels" && request.method === "PUT") {
+        if (!["admin", "superadmin"].includes(user.role)) {
+          return error("Forbidden.", 403);
+        }
+
+        const id = String(url.searchParams.get("id") || "").trim();
+        if (!id) return error("Channel id is required.");
+
+        const currentRows = await supabaseFetch(env, "channels", {
+          query:
+            `?select=id,name,description,created_by,created_at&id=eq.${encodeURIComponent(id)}&limit=1`,
+        });
+        const channel = Array.isArray(currentRows) ? currentRows[0] : null;
+        if (!channel) return error("Channel not found.", 404);
+        if (channel.name === "general") {
+          return error("The general channel cannot be renamed.", 400);
+        }
+
+        const body = await request.json().catch(() => ({}));
+        const name = String(body.name || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9-_]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, MAX_CHANNEL_LENGTH);
+
+        if (!name || name === "general") {
+          return error("Choose a valid channel name.");
+        }
+
+        const duplicate = await supabaseFetch(env, "channels", {
+          query:
+            `?select=id&name=eq.${encodeURIComponent(name)}&id=neq.${encodeURIComponent(id)}&limit=1`,
+        });
+        if (Array.isArray(duplicate) && duplicate.length) {
+          return error("Channel already exists.", 409);
+        }
+
+        const updated = await supabaseFetch(env, "channels", {
+          method: "PATCH",
+          query:
+            `?id=eq.${encodeURIComponent(id)}&select=id,name,description,created_by,created_at`,
+          body: { name },
+          headers: { Prefer: "return=representation" },
+        });
+        const saved = Array.isArray(updated) ? updated[0] : updated;
+
+        return response({
+          ok: true,
+          channel: {
+            id: saved.id,
+            name: saved.name,
+            description: saved.description,
+            createdBy: saved.created_by,
+            createdAt: saved.created_at,
+          },
+        });
+      }
+
       if (path === "/channels" && request.method === "DELETE") {
         const id = url.searchParams.get("id");
         if (!id) return error("Channel id is required.");
