@@ -316,6 +316,14 @@ async function touchUserActivity(env, userId) {
   });
 }
 
+function isUniqueViolation(err) {
+  return (
+    Number(err?.status) === 409 ||
+    String(err?.data?.code || "") === "23505" ||
+    /duplicate key|already exists|unique constraint/i.test(String(err?.message || ""))
+  );
+}
+
 async function getBootstrapChannels(env) {
   try {
     let channels = await supabaseGetAll(env, "channels", "id,name,description,created_by,created_at");
@@ -517,17 +525,25 @@ async function createNextChannelPage(env, channelId) {
     }
   }
   const nextNumber = (last?.page_number || 0) + 1;
-  const inserted = await supabaseFetch(env, "channel_pages", {
-    method: "POST",
-    query: "?select=id,channel_id,page_number,starts_at,created_at",
-    body: {
-      channel_id: channelId,
-      page_number: nextNumber,
-      starts_at: new Date().toISOString(),
-    },
-    headers: { Prefer: "return=representation" },
-  });
-  return Array.isArray(inserted) ? inserted[0] : inserted;
+  try {
+    const inserted = await supabaseFetch(env, "channel_pages", {
+      method: "POST",
+      query: "?select=id,channel_id,page_number,starts_at,created_at",
+      body: {
+        channel_id: channelId,
+        page_number: nextNumber,
+        starts_at: new Date().toISOString(),
+      },
+      headers: { Prefer: "return=representation" },
+    });
+    return Array.isArray(inserted) ? inserted[0] : inserted;
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      const raced = await getLastChannelPage(env, channelId);
+      if (raced && Number(raced.page_number) >= nextNumber) return raced;
+    }
+    throw err;
+  }
 }
 
 async function getMessagesForChannel(env, channelId, pageNumber = null) {
@@ -660,16 +676,24 @@ async function createChannel(env, user, name, description) {
     throw Object.assign(new Error("Channel already exists."), { status: 409 });
   }
 
-  const inserted = await supabaseFetch(env, "channels", {
-    method: "POST",
-    query: "?select=id,name,description,created_by,created_at",
-    body: {
-      name: safeName,
-      description: cleanName(description) || "Project discussion",
-      created_by: user.id,
-    },
-    headers: { Prefer: "return=representation" },
-  });
+  let inserted;
+  try {
+    inserted = await supabaseFetch(env, "channels", {
+      method: "POST",
+      query: "?select=id,name,description,created_by,created_at",
+      body: {
+        name: safeName,
+        description: cleanName(description) || "Project discussion",
+        created_by: user.id,
+      },
+      headers: { Prefer: "return=representation" },
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      throw Object.assign(new Error("Channel already exists."), { status: 409 });
+    }
+    throw err;
+  }
 
   const channel = Array.isArray(inserted) ? inserted[0] : inserted;
   const joined = await ensureChannelMember(env, channel.id, user.id);
@@ -1119,13 +1143,19 @@ export default {
           return error("Channel already exists.", 409);
         }
 
-        const updated = await supabaseFetch(env, "channels", {
-          method: "PATCH",
-          query:
-            `?id=eq.${encodeURIComponent(id)}&select=id,name,description,created_by,created_at`,
-          body: { name },
-          headers: { Prefer: "return=representation" },
-        });
+        let updated;
+        try {
+          updated = await supabaseFetch(env, "channels", {
+            method: "PATCH",
+            query:
+              `?id=eq.${encodeURIComponent(id)}&select=id,name,description,created_by,created_at`,
+            body: { name },
+            headers: { Prefer: "return=representation" },
+          });
+        } catch (err) {
+          if (isUniqueViolation(err)) return error("Channel already exists.", 409);
+          throw err;
+        }
         const saved = Array.isArray(updated) ? updated[0] : updated;
 
         return response({
