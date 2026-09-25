@@ -490,6 +490,21 @@ fileInput?.addEventListener('change',()=>{
   fileInput.value='';
   if(files.length)uploadSelectedFiles(files);
 });
+msgInput?.addEventListener('paste',e=>{
+  if(!currentUser||!activeChannel)return;
+  const items=[...(e.clipboardData?.items||[])];
+  const imageItems=items.filter(item=>item.kind==='file'&&String(item.type||'').startsWith('image/'));
+  if(!imageItems.length)return;
+  e.preventDefault();
+  const files=imageItems.map((item,index)=>{
+    const blob=item.getAsFile();
+    if(!blob)return null;
+    const type=blob.type||'image/png';
+    const ext=(type.split('/')[1]||'png').split(';')[0].replace('jpeg','jpg');
+    return new File([blob],`pasted-image-${Date.now()}-${index+1}.${ext}`,{type});
+  }).filter(Boolean);
+  if(files.length)uploadSelectedFiles(files);
+});
 
 let fileExpiryTimer=setInterval(updateFileExpiryTimers,1000);
 updateFileExpiryTimers();
