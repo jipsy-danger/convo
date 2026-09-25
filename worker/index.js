@@ -1072,8 +1072,16 @@ export default {
         });
       }
 
-      if (path === "/channels" && request.method === "DELETE") {
-        const id = url.searchParams.get("id");
+      if (
+        (path === "/channels" && request.method === "DELETE") ||
+        (path === "/channels/delete" && request.method === "POST")
+      ) {
+        const body = request.method === "POST"
+          ? await request.json().catch(() => ({}))
+          : {};
+        const id = request.method === "POST"
+          ? String(body.id || "").trim()
+          : url.searchParams.get("id");
         if (!id) return error("Channel id is required.");
         if (id === "general") return error("The general channel cannot be deleted.");
         if (!["admin", "superadmin"].includes(user.role)) {
@@ -1133,12 +1141,22 @@ export default {
         });
       }
 
-      if (path === "/pages" && request.method === "DELETE") {
+      if (
+        (path === "/pages" && request.method === "DELETE") ||
+        (path === "/pages/delete" && request.method === "POST")
+      ) {
         if (!["admin", "superadmin"].includes(user.role)) {
           return error("Forbidden.", 403);
         }
-        const channelName = String(url.searchParams.get("channel") || "").trim().toLowerCase();
-        const pageNumber = Number(url.searchParams.get("page"));
+        const deleteBody = request.method === "POST"
+          ? await request.json().catch(() => ({}))
+          : {};
+        const channelName = String(
+          request.method === "POST" ? deleteBody.channel : url.searchParams.get("channel") || ""
+        ).trim().toLowerCase();
+        const pageNumber = Number(
+          request.method === "POST" ? deleteBody.page : url.searchParams.get("page")
+        );
         if (!channelName) return error("Channel is required.");
         if (!Number.isInteger(pageNumber) || pageNumber < 1) {
           return error("Valid page number is required.");
@@ -1287,8 +1305,16 @@ export default {
         });
       }
 
-      if (path.startsWith("/messages/") && request.method === "DELETE") {
-        const id = path.split("/").pop();
+      if (
+        (path.startsWith("/messages/") && request.method === "DELETE") ||
+        (path === "/messages/delete" && request.method === "POST")
+      ) {
+        const deleteBody = request.method === "POST"
+          ? await request.json().catch(() => ({}))
+          : {};
+        const id = request.method === "POST"
+          ? String(deleteBody.id || "").trim()
+          : path.split("/").pop();
         if (!id) return error("Message id is required.");
 
         // Keep the message lookup independent from the users relation.
