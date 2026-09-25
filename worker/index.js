@@ -508,12 +508,32 @@ async function getMessagesForChannel(env, channelId, pageNumber = null) {
 
   const rows = await supabaseFetch(env, "messages", {
     query:
-      `?select=id,channel_id,user_id,text,created_at&channel_id=eq.${encodeURIComponent(channelId)}&page_id=eq.${encodeURIComponent(page.id)}&order=created_at.asc&limit=300`,
+      `?select=id,channel_id,user_id,text,created_at,quoted_message_id&channel_id=eq.${encodeURIComponent(channelId)}&page_id=eq.${encodeURIComponent(page.id)}&order=created_at.asc&limit=300`,
   });
 
   if (!Array.isArray(rows) || !rows.length) return [];
 
-  const userIds = [...new Set(rows.map((message) => message.user_id).filter(Boolean))];
+  const quoteIds = [...new Set(rows.map((message) => message.quoted_message_id).filter(Boolean))];
+  const quoteRows = quoteIds.length
+    ? await supabaseFetch(env, "messages", {
+        query:
+          `?select=id,channel_id,user_id,text,created_at&id=in.(${quoteIds
+            .map((id) => encodeURIComponent(id))
+            .join(",")})`,
+      })
+    : [];
+  const quoteById = new Map(
+    (Array.isArray(quoteRows) ? quoteRows : []).map((message) => [String(message.id), message])
+  );
+
+  const userIds = [
+    ...new Set(
+      rows
+        .map((message) => message.user_id)
+        .concat((Array.isArray(quoteRows) ? quoteRows : []).map((message) => message.user_id))
+        .filter(Boolean)
+    ),
+  ];
   const authors = userIds.length
     ? await supabaseFetch(env, "users", {
         query:
@@ -561,6 +581,10 @@ async function getMessagesForChannel(env, channelId, pageNumber = null) {
     .map((message) => {
       const author = authorById.get(String(message.user_id));
       const files = attachmentsByMessage.get(String(message.id)) || [];
+      const quoted = message.quoted_message_id
+        ? quoteById.get(String(message.quoted_message_id))
+        : null;
+      const quotedAuthor = quoted ? authorById.get(String(quoted.user_id)) : null;
       return {
         id: message.id,
         channel: channelName,
@@ -569,6 +593,14 @@ async function getMessagesForChannel(env, channelId, pageNumber = null) {
         author: author?.name,
         role: author?.role,
         text: message.text,
+        quotedMessage: quoted
+          ? {
+              id: quoted.id,
+              author: quotedAuthor?.name || "Unknown",
+              role: quotedAuthor?.role || "user",
+              text: quoted.text || "",
+            }
+          : null,
         files,
         time: message.created_at,
         createdAt: message.created_at,
@@ -1273,20 +1305,54 @@ export default {
           page = await createNextChannelPage(env, channel.id);
         }
 
+        let quotedMessageId = null;
+        const requestedQuote = String(body.quotedMessageId || "").trim();
+        if (requestedQuote) {
+          const quotedRows = await supabaseFetch(env, "messages", {
+            query:
+              `?select=id,channel_id,user_id,text,created_at&id=eq.${encodeURIComponent(requestedQuote)}&limit=1`,
+          });
+          const quoted = Array.isArray(quotedRows) && quotedRows.length ? quotedRows[0] : null;
+          if (!quoted) return error("Reply target not found.", 404);
+          if (String(quoted.channel_id) !== String(channel.id)) {
+            return error("Reply target must be in the same channel.", 400);
+          }
+          quotedMessageId = quoted.id;
+        }
+
         const inserted = await supabaseFetch(env, "messages", {
           method: "POST",
-          query: "?select=id,channel_id,user_id,page_id,text,created_at",
+          query: "?select=id,channel_id,user_id,page_id,text,quoted_message_id,created_at",
           body: {
             channel_id: channel.id,
             user_id: user.id,
             page_id: page.id,
             text,
+            quoted_message_id: quotedMessageId,
           },
           headers: { Prefer: "return=representation" },
         });
 
         const message = Array.isArray(inserted) ? inserted[0] : inserted;
         await recordActivity(env, user, channel.id, "POSTED");
+
+        let quotedMessage = null;
+        if (quotedMessageId) {
+          const quotedRows = await supabaseFetch(env, "messages", {
+            query:
+              `?select=id,user_id,text&id=eq.${encodeURIComponent(quotedMessageId)}&limit=1`,
+          });
+          const quoted = Array.isArray(quotedRows) && quotedRows.length ? quotedRows[0] : null;
+          if (quoted) {
+            const quotedUser = await getUserById(env, quoted.user_id);
+            quotedMessage = {
+              id: quoted.id,
+              author: quotedUser?.name || "Unknown",
+              role: quotedUser?.role || "user",
+              text: quoted.text || "",
+            };
+          }
+        }
 
         return response({
           ok: true,
@@ -1299,12 +1365,12 @@ export default {
             author: user.name,
             role: user.role,
             text: message.text,
+            quotedMessage,
             time: message.created_at,
             createdAt: message.created_at,
           },
         });
       }
-
       if (
         (path.startsWith("/messages/") && request.method === "DELETE") ||
         (path === "/messages/delete" && request.method === "POST")
