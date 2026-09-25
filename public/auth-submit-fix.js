@@ -1,14 +1,8 @@
 (() => {
-  const form = document.getElementById('authForm');
-  if (form) {
-    form.addEventListener('submit', event => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (typeof window.login === 'function') window.login();
-    }, true);
-  }
-
   const nativeFetch = window.fetch.bind(window);
+  if (window.__convoFetchPatched) return;
+  window.__convoFetchPatched = true;
+
   window.fetch = (input, init = {}) => {
     const headers = new Headers(init.headers || {});
     try {
