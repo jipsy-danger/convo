@@ -389,24 +389,6 @@ async function getBootstrapChannels(env) {
 async function authenticate(env, pin, name, requestedSuperAdmin, superAdminCode) {
   if (!validPin(pin)) return error("PIN must be exactly 4 digits.", 401);
 
-  const namespace = requestedSuperAdmin ? "superadmin" : "normal";
-  let user = await getUserByPin(env, pin, namespace);
-  const bootstrapPromise = getBootstrapChannels(env);
-
-  if (user) {
-    const [, refreshed] = await Promise.all([
-      touchUserActivity(env, user.id),
-      getUserById(env, user.id),
-    ]);
-    user = refreshed || user;
-    return response({
-      ok: true,
-      isNew: false,
-      user: formatUser(user),
-      channels: await bootstrapPromise,
-    });
-  }
-
   if (requestedSuperAdmin) {
     if (pin !== SUPERADMIN_PIN) {
       return error("Invalid Super Admin PIN.", 401);
@@ -417,27 +399,41 @@ async function authenticate(env, pin, name, requestedSuperAdmin, superAdminCode)
     if (String(superAdminCode || "") !== String(env.CONVO_SUPERADMIN_KEY)) {
       return error("Invalid Super Admin key.", 401);
     }
+  }
 
-    if (!user) {
-      const inserted = await supabaseFetch(env, "users", {
-        method: "POST",
-        query: "?select=id,pin,name,role,created_at,last_activity_at",
-        body: { pin: SUPERADMIN_PIN, name: "Atitya", role: "superadmin" },
-        headers: { Prefer: "return=representation" },
-      });
-      user = Array.isArray(inserted) ? inserted[0] : inserted;
-      return response({
-        ok: true,
-        isNew: true,
-        user: formatUser(user),
-        channels: await bootstrapPromise,
-        superAdminSession: await createSuperAdminSession(env, user.id),
-      });
-    }
+  const namespace = requestedSuperAdmin ? "superadmin" : "normal";
+  let user = await getUserByPin(env, pin, namespace);
+  const bootstrapPromise = getBootstrapChannels(env);
 
-    return response({
+  if (user) {
+    const [, refreshed] = await Promise.all([
+      touchUserActivity(env, user.id),
+      getUserById(env, user.id),
+    ]);
+    user = refreshed || user;
+    const result = {
       ok: true,
       isNew: false,
+      user: formatUser(user),
+      channels: await bootstrapPromise,
+    };
+    if (requestedSuperAdmin) {
+      result.superAdminSession = await createSuperAdminSession(env, user.id);
+    }
+    return response(result);
+  }
+
+  if (requestedSuperAdmin) {
+    const inserted = await supabaseFetch(env, "users", {
+      method: "POST",
+      query: "?select=id,pin,name,role,created_at,last_activity_at",
+      body: { pin: SUPERADMIN_PIN, name: "Atitya", role: "superadmin" },
+      headers: { Prefer: "return=representation" },
+    });
+    user = Array.isArray(inserted) ? inserted[0] : inserted;
+    return response({
+      ok: true,
+      isNew: true,
       user: formatUser(user),
       channels: await bootstrapPromise,
       superAdminSession: await createSuperAdminSession(env, user.id),
@@ -466,7 +462,6 @@ async function authenticate(env, pin, name, requestedSuperAdmin, superAdminCode)
     channels: await bootstrapPromise,
   });
 }
-
 async function requireUser(env, request) {
   const superAdminSession = request.headers.get("X-Convo-SuperAdmin-Session") || "";
   if (superAdminSession) {
