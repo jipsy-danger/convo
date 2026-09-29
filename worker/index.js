@@ -413,17 +413,11 @@ async function getBootstrapChannels(env, user = null) {
     return [];
   }
 }
-async function authenticate(env, pin, name, requestedSuperAdmin, superAdminCode) {
+async function authenticate(env, pin, name, requestedSuperAdmin) {
   if (!validPin(pin)) return error("PIN must be exactly 4 digits.", 401);
 
   if (requestedSuperAdmin) {
     if (pin !== SUPERADMIN_PIN) return error("Invalid Super Admin PIN.", 401);
-    if (!env.CONVO_SUPERADMIN_KEY) {
-      return error("Super Admin key is not configured on the Worker.", 500);
-    }
-    if (String(superAdminCode || "") !== String(env.CONVO_SUPERADMIN_KEY)) {
-      return error("Invalid Super Admin key.", 401);
-    }
   }
 
   const namespace = requestedSuperAdmin ? "superadmin" : "normal";
@@ -1065,8 +1059,7 @@ export default {
           env,
           String(body.pin || ""),
           body.name,
-          Boolean(body.isSuperAdmin),
-          String(body.superAdminCode || "")
+          Boolean(body.isSuperAdmin)
         );
       }
 
