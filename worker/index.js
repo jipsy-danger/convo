@@ -373,10 +373,33 @@ function isUniqueViolation(err) {
   );
 }
 
-async function getBootstrapChannels(env) {
+async function getBootstrapChannels(env, user = null) {
   try {
-    let channels = await supabaseGetAll(env, "channels", "id,name,description,created_by,created_at,is_private");
+    let channels = await supabaseGetAll(
+      env,
+      "channels",
+      "id,name,description,created_by,created_at,is_private"
+    );
     if (!channels.length) channels = [await ensureGeneralChannel(env)];
+
+    if (user?.role !== "superadmin") {
+      let memberChannelIds = new Set();
+      if (user?.id) {
+        const memberships = await supabaseFetch(env, "channel_members", {
+          query:
+            `?select=channel_id&user_id=eq.${encodeURIComponent(user.id)}&limit=1000`,
+        });
+        memberChannelIds = new Set(
+          (Array.isArray(memberships) ? memberships : []).map((row) => String(row.channel_id))
+        );
+      }
+      channels = channels.filter(
+        (channel) =>
+          !channel.is_private ||
+          memberChannelIds.has(String(channel.id))
+      );
+    }
+
     return channels.map((channel) => ({
       id: channel.id,
       name: channel.name,
@@ -390,14 +413,11 @@ async function getBootstrapChannels(env) {
     return [];
   }
 }
-
 async function authenticate(env, pin, name, requestedSuperAdmin, superAdminCode) {
   if (!validPin(pin)) return error("PIN must be exactly 4 digits.", 401);
 
   if (requestedSuperAdmin) {
-    if (pin !== SUPERADMIN_PIN) {
-      return error("Invalid Super Admin PIN.", 401);
-    }
+    if (pin !== SUPERADMIN_PIN) return error("Invalid Super Admin PIN.", 401);
     if (!env.CONVO_SUPERADMIN_KEY) {
       return error("Super Admin key is not configured on the Worker.", 500);
     }
@@ -408,7 +428,6 @@ async function authenticate(env, pin, name, requestedSuperAdmin, superAdminCode)
 
   const namespace = requestedSuperAdmin ? "superadmin" : "normal";
   let user = await getUserByPin(env, pin, namespace);
-  const bootstrapPromise = getBootstrapChannels(env);
 
   if (user) {
     const [, refreshed] = await Promise.all([
@@ -420,7 +439,7 @@ async function authenticate(env, pin, name, requestedSuperAdmin, superAdminCode)
       ok: true,
       isNew: false,
       user: formatUser(user),
-      channels: await bootstrapPromise,
+      channels: await getBootstrapChannels(env, user),
     };
     if (requestedSuperAdmin) {
       result.superAdminSession = await createSuperAdminSession(env, user.id);
@@ -440,14 +459,18 @@ async function authenticate(env, pin, name, requestedSuperAdmin, superAdminCode)
       ok: true,
       isNew: true,
       user: formatUser(user),
-      channels: await bootstrapPromise,
+      channels: await getBootstrapChannels(env, user),
       superAdminSession: await createSuperAdminSession(env, user.id),
     });
   }
 
-  /* Normal mode: 4999 is an ordinary user PIN and may coexist with the
-     Super Admin's 4999 because the database namespace is role-scoped. */
-  if (!name) return response({ ok: true, isNew: true, channels: await bootstrapPromise });
+  if (!name) {
+    return response({
+      ok: true,
+      isNew: true,
+      channels: await getBootstrapChannels(env),
+    });
+  }
 
   const safeName = cleanName(name);
   if (!safeName) return error("Display name is required.");
@@ -464,7 +487,7 @@ async function authenticate(env, pin, name, requestedSuperAdmin, superAdminCode)
     ok: true,
     isNew: false,
     user: formatUser(user),
-    channels: await bootstrapPromise,
+    channels: await getBootstrapChannels(env, user),
   });
 }
 async function requireUser(env, request) {
@@ -542,11 +565,6 @@ async function requireChannelAccess(env, user, channel) {
 /* Returns true only when this request creates the membership. */
 async function ensureChannelMember(env, channelId, userId) {
   const channel = await getChannelById(env, channelId);
-  await requireChannelAccess(env, {
-    id: userId,
-    role: channel?.is_private ? undefined : "user",
-  }, channel);
-
   const existing = await supabaseFetch(env, "channel_members", {
     query:
       `?select=channel_id,user_id&channel_id=eq.${encodeURIComponent(channelId)}&user_id=eq.${encodeURIComponent(userId)}&limit=1`,
@@ -1144,6 +1162,7 @@ export default {
 
         const channel = await getChannelById(env, message.channel_id);
         if (!channel) return error("File channel not found.", 404);
+        await requireChannelAccess(env, user, channel);
         await ensureChannelMember(env, channel.id, user.id);
 
         const token = await createDownloadToken(env, attachment.id);
@@ -1703,6 +1722,7 @@ export default {
 
         const channel = await getChannelByName(env, channelName);
         if (!channel) return error("Channel not found.", 404);
+        await requireChannelAccess(env, user, channel);
 
         const joined = await ensureChannelMember(env, channel.id, user.id);
         if (joined) await recordActivitySafe(env, user, channel.id, "JOINED");
