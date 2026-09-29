@@ -46,3 +46,9 @@ Feel free to check [our documentation](https://docs.astro.build) or jump into ou
 ## Worker secrets
 
 The Super Admin flow requires a server-only Worker secret named `CONVO_SUPERADMIN_KEY`. Store it as a Cloudflare Worker secret; never put the value in the repository or frontend code. Super Admin login uses the fixed PIN `4999` plus this server-side key, then receives a signed 12-hour session used for protected admin API calls.
+
+## Private channels
+
+Private channels are created and managed only by the Super Admin. During creation, the Super Admin selects the users who may access the channel. Only selected users and the Super Admin can see or use it. Public-channel behavior remains unchanged.
+
+The private-channel controls use the existing Super Admin signed session; no client-side role flag is trusted for authorization.
