@@ -10,8 +10,49 @@ async function ensureSpace(env,c,u){const x=await db(env,'channel_members',{quer
 async function target(env,u,b){if(b.channelId){const c=await channel(env,b.channelId);if(!c)throw Object.assign(new Error('Space not found.'),{status:404});await ensureSpace(env,c.id,u.id);return{channelId:c.id,conversationId:null}}if(b.conversationId){const c=await dm(env,b.conversationId);if(!c)throw Object.assign(new Error('Conversation not found.'),{status:404});if(!await dmMember(env,c.id,u.id))throw Object.assign(new Error('Forbidden.'),{status:403});return{channelId:null,conversationId:c.id}}throw Object.assign(new Error('Conversation target is required.'),{status:400})}
 async function hydrate(env,rows,uid){if(!rows?.length)return[];const ids=rows.map(x=>x.id).join(',');const [react,stars,pins,us,atts]=await Promise.all([db(env,'message_reactions',{query:`?select=message_id,user_id,emoji&message_id=in.(${ids})&limit=5000`}),db(env,'message_stars',{query:`?select=message_id&user_id=eq.${enc(uid)}&message_id=in.(${ids})&limit=5000`}),db(env,'message_pins',{query:`?select=message_id&user_id=eq.${enc(uid)}&message_id=in.(${ids})&limit=5000`}),users(env),db(env,'message_attachments',{query:`?select=id,message_id,file_name,mime_type,file_size,object_path,expires_at,deleted_at&message_id=in.(${ids})&expires_at=gt.${enc(new Date().toISOString())}&deleted_at=is.null&limit=1000`})]);const um=new Map((us||[]).map(x=>[x.id,x]));const rm=new Map();for(const r of react||[]){if(!rm.has(r.message_id))rm.set(r.message_id,new Map());const m=rm.get(r.message_id);if(!m.has(r.emoji))m.set(r.emoji,{emoji:r.emoji,count:0,reacted:false});const x=m.get(r.emoji);x.count++;if(r.user_id===uid)x.reacted=true}const sm=new Set((stars||[]).map(x=>x.message_id)),pm=new Set((pins||[]).map(x=>x.message_id)),am=new Map();for(const a of atts||[]){if(!am.has(a.message_id))am.set(a.message_id,[]);am.get(a.message_id).push(a)}return rows.map(m=>({id:m.id,channelId:m.channel_id,conversationId:m.conversation_id,parentMessageId:m.parent_message_id,quotedMessageId:m.quoted_message_id,userId:m.user_id,author:um.get(m.user_id)?.name||'Unknown',role:um.get(m.user_id)?.role||'user',text:m.deleted_at?'Message deleted':m.text,deleted:!!m.deleted_at,edited:!!m.edited_at,time:m.created_at,reactions:[...(rm.get(m.id)?.values()||[])],starred:sm.has(m.id),pinned:pm.has(m.id),attachments:am.get(m.id)||[]}))}
 async function bootstrap(env,u){const [spaces,members,dms,dmm,people,notifications]=await Promise.all([db(env,'channels',{query:'?select=id,name,description,created_by,created_at&order=name.asc&limit=1000'}),db(env,'channel_members',{query:`?select=channel_id,muted,starred,pinned,notification_level,last_viewed_at&user_id=eq.${enc(u.id)}&limit=1000`}),db(env,'direct_conversations',{query:'?select=id,kind,name,created_by,created_at,updated_at&order=updated_at.desc&limit=1000'}),db(env,'direct_members',{query:`?select=conversation_id,user_id,muted,starred,pinned,notification_level,last_read_at&user_id=eq.${enc(u.id)}&limit=1000`}),users(env),db(env,'notifications',{query:`?select=id,type,body,message_id,conversation_id,channel_id,read_at,created_at&user_id=eq.${enc(u.id)}&order=created_at.desc&limit=50`})]);const ms=new Map((members||[]).map(x=>[x.channel_id,x])),md=new Map((dmm||[]).map(x=>[x.conversation_id,x])),peopleMap=new Map((people||[]).map(x=>[x.id,x]));const allDm=await db(env,'direct_members',{query:'?select=conversation_id,user_id&limit=5000'}),names=new Map();for(const x of allDm||[]){if(!names.has(x.conversation_id))names.set(x.conversation_id,[]);const p=peopleMap.get(x.user_id);if(p)names.get(x.conversation_id).push({id:p.id,name:p.name,role:p.role})}return json({ok:true,user:{id:u.id,name:u.name,role:u.role},people:(people||[]).filter(x=>x.id!==u.id).map(x=>({id:x.id,name:x.name,role:x.role})),spaces:(spaces||[]).map(x=>({...x,settings:ms.get(x.id)||null})),dms:(dms||[]).filter(x=>md.has(x.id)).map(x=>({...x,settings:md.get(x.id),members:names.get(x.id)||[]})),notifications:notifications||[]})}
-async function createDm(env,u,b){const ids=[...new Set([u.id,...(Array.isArray(b.userIds)?b.userIds:[])].map(Number).filter(Number.isFinite))];if(ids.length<2)return fail('Choose at least one other person.');const kind=ids.length===2?'dm':'group_dm';const rows=await db(env,'direct_conversations',{query:`?select=id,kind&kind=eq.${kind}&limit=1000`});const members=await db(env,'direct_members',{query:`?select=conversation_id,user_id&user_id=in.(${ids.join(',')})&limit=5000`});const wanted=new Set(ids);for(const c of rows||[]){const set=new Set((members||[]).filter(x=>x.conversation_id===c.id).map(x=>x.user_id));if(set.size===wanted.size&&[...wanted].every(x=>set.has(x)))return json({ok:true,conversationId:c.id,existing:true})}const ins=await db(env,'direct_conversations',{method:'POST',query:'?select=id,kind,name,created_by,created_at,updated_at',body:{kind,name:String(b.name||'').trim().slice(0,80)||null,created_by:u.id},headers:{Prefer:'return=representation'}}),c=ins?.[0]||ins;for(const id of ids)await db(env,'direct_members',{method:'POST',body:{conversation_id:c.id,user_id:id},headers:{Prefer:'resolution=merge-duplicates,return=minimal'}});return json({ok:true,conversationId:c.id,existing:false})}
+async function createDm(env,u,b){
+  const ids=[...new Set([u.id,...(Array.isArray(b.userIds)?b.userIds:[])].map(Number).filter(Number.isFinite))];
+  if(ids.length<2)return fail('Choose at least one other person.');
+  const kind=ids.length===2?'dm':'group_dm';
+  const rows=await db(env,'direct_conversations',{query:"?select=id,kind&kind=eq."+kind+"&limit=1000"});
+  const candidateIds=(rows||[]).map(x=>x.id).filter(Boolean);
+  const members=candidateIds.length
+    ? await db(env,'direct_members',{query:"?select=conversation_id,user_id&conversation_id=in.("+candidateIds.join(',')+")&limit=10000"})
+    : [];
+  const wanted=new Set(ids);
+  const grouped=new Map();
+  for(const member of members||[]){
+    if(!grouped.has(member.conversation_id))grouped.set(member.conversation_id,new Set());
+    grouped.get(member.conversation_id).add(Number(member.user_id));
+  }
+  for(const c of rows||[]){
+    const set=grouped.get(c.id)||new Set();
+    if(set.size===wanted.size&&[...wanted].every(id=>set.has(id))){
+      return json({ok:true,conversationId:c.id,existing:true});
+    }
+  }
+  const ins=await db(env,'direct_conversations',{method:'POST',query:'?select=id,kind,name,created_by,created_at,updated_at',body:{kind,name:String(b.name||'').trim().slice(0,80)||null,created_by:u.id},headers:{Prefer:'return=representation'}});
+  const c=ins?.[0]||ins;
+  for(const id of ids){
+    await db(env,'direct_members',{method:'POST',body:{conversation_id:c.id,user_id:id},headers:{Prefer:'resolution=merge-duplicates,return=minimal'}});
+  }
+  return json({ok:true,conversationId:c.id,existing:false});
+}
 async function createSpace(env,u,b){const name=String(b.name||'').trim().toLowerCase().replace(/[^a-z0-9-_]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60);if(!name||name==='general')return fail('Choose a different space name.');if((await db(env,'channels',{query:`?select=id&name=eq.${enc(name)}&limit=1`}))?.length)return fail('That space already exists.',409);const ins=await db(env,'channels',{method:'POST',query:'?select=id,name,description,created_by,created_at',body:{name,description:String(b.description||'').trim().slice(0,200)||'Team space',created_by:u.id},headers:{Prefer:'return=representation'}}),s=ins?.[0]||ins;await ensureSpace(env,s.id,u.id);return json({ok:true,space:s})}
+async function validateReference(env,target,id,label){
+  if(id===undefined||id===null||String(id).trim()==='')return null;
+  const numericId=Number(id);
+  if(!Number.isInteger(numericId)||numericId<1)return fail(label+' is invalid.');
+  const rows=await db(env,'messages',{query:"?select=id,channel_id,conversation_id&id=eq."+enc(numericId)+"&limit=1"});
+  const message=rows?.[0];
+  if(!message)return fail(label+' not found.',404);
+  const sameTarget=target.channelId
+    ? String(message.channel_id)===String(target.channelId)&&message.conversation_id==null
+    : String(message.conversation_id)===String(target.conversationId)&&message.channel_id==null;
+  if(!sameTarget)return fail(label+' must belong to the same conversation.',400);
+  return numericId;
+}
+
 async function post(env,u,request){
   let b={},file=null;
   if((request.headers.get('content-type')||'').includes('multipart/form-data')){
@@ -34,6 +75,9 @@ async function post(env,u,request){
   if(file?.arrayBuffer&&file.size>MAX_FILE)return fail('File exceeds 50 MB.');
 
   const t=await target(env,u,{channelId:b.channelId,conversationId:b.conversationId||null});
+  const parentMessageId=await validateReference(env,t,b.parentMessageId,'Parent message');
+  const quotedMessageId=await validateReference(env,t,b.quotedMessageId,'Quoted message');
+
   const ins=await db(env,'messages',{
     method:'POST',
     query:'?select=id,channel_id,conversation_id,user_id,parent_message_id,quoted_message_id,text,created_at',
@@ -41,8 +85,8 @@ async function post(env,u,request){
       channel_id:t.channelId,
       conversation_id:t.conversationId,
       user_id:u.id,
-      parent_message_id:b.parentMessageId?Number(b.parentMessageId):null,
-      quoted_message_id:b.quotedMessageId?Number(b.quotedMessageId):null,
+      parent_message_id:parentMessageId,
+      quoted_message_id:quotedMessageId,
       text
     },
     headers:{Prefer:'return=representation'}
@@ -53,12 +97,12 @@ async function post(env,u,request){
   try{
     if(file?.arrayBuffer&&file.size){
       const name=String(file.name||'file').replace(/[^A-Za-z0-9._-]+/g,'_').slice(0,160);
-      const path=`${u.id}/${crypto.randomUUID()}-${name}`;
-      const up=await fetch(`${env.SUPABASE_URL}/storage/v1/object/convo-files/${path}`,{
+      const path=u.id+"/"+crypto.randomUUID()+"-"+name;
+      const up=await fetch(env.SUPABASE_URL+"/storage/v1/object/convo-files/"+path,{
         method:'POST',
         headers:{
           apikey:env.SUPABASE_SECRET_KEY,
-          Authorization:`Bearer ${env.SUPABASE_SECRET_KEY}`,
+          Authorization:"Bearer "+env.SUPABASE_SECRET_KEY,
           'Content-Type':file.type||'application/octet-stream',
           'x-upsert':'false'
         },
@@ -66,7 +110,7 @@ async function post(env,u,request){
       });
       if(!up.ok){
         const detail=await up.text();
-        throw new Error(detail||`File upload failed (${up.status}).`);
+        throw new Error(detail||"File upload failed ("+up.status+").");
       }
 
       uploadedPath=path;
@@ -89,11 +133,11 @@ async function post(env,u,request){
   }catch(err){
     if(uploadedPath){
       try{
-        await fetch(`${env.SUPABASE_URL}/storage/v1/object/convo-files/${uploadedPath}`,{
+        await fetch(env.SUPABASE_URL+"/storage/v1/object/convo-files/"+uploadedPath,{
           method:'DELETE',
           headers:{
             apikey:env.SUPABASE_SECRET_KEY,
-            Authorization:`Bearer ${env.SUPABASE_SECRET_KEY}`
+            Authorization:"Bearer "+env.SUPABASE_SECRET_KEY
           }
         });
       }catch(cleanupErr){
@@ -104,7 +148,7 @@ async function post(env,u,request){
     try{
       await db(env,'messages',{
         method:'DELETE',
-        query:`?id=eq.${enc(m.id)}`,
+        query:"?id=eq."+enc(m.id),
         headers:{Prefer:'return=minimal'}
       });
     }catch(cleanupErr){
@@ -132,7 +176,7 @@ async function post(env,u,request){
         conversation_id:m.conversation_id,
         channel_id:m.channel_id,
         type:'mention',
-        body:`${u.name} mentioned you`
+        body:u.name+' mentioned you'
       },
       headers:{Prefer:'return=minimal'}
     });
@@ -140,7 +184,26 @@ async function post(env,u,request){
 
   return json({ok:true,message:(await hydrate(env,[m],u.id))[0]});
 }
-export async function handleChatFeature(request,env,user){const url=new URL(request.url),path=url.pathname.replace(/\/+$/,'')||'/';if(!path.startsWith('/chat'))return null;try{if(request.method==='OPTIONS')return json({ok:true},204);if(path==='/chat/bootstrap'&&request.method==='GET')return bootstrap(env,user);if(path==='/chat/conversations'&&request.method==='POST')return createDm(env,user,await request.json().catch(()=>({})));if(path==='/chat/spaces'&&request.method==='POST')return createSpace(env,user,await request.json().catch(()=>({})));if(path==='/chat/messages'&&request.method==='GET'){const channelId=url.searchParams.get('channelId'),conversationId=url.searchParams.get('conversationId'),parent=url.searchParams.get('parentMessageId'),after=url.searchParams.get('after');if(!channelId&&!conversationId)return fail('Conversation target is required.');await target(env,user,{channelId,conversationId});let q=`?select=id,channel_id,conversation_id,user_id,parent_message_id,quoted_message_id,text,created_at,edited_at,deleted_at&order=created_at.asc&limit=300`;q+=channelId?`&channel_id=eq.${enc(channelId)}`:`&conversation_id=eq.${enc(conversationId)}`;q+=parent?`&parent_message_id=eq.${enc(parent)}`:'&parent_message_id=is.null';if(after)q+=`&created_at=gt.${enc(after)}`;return json({ok:true,messages:await hydrate(env,await db(env,'messages',{query:q}),user.id)})}if(path==='/chat/messages'&&request.method==='POST')return post(env,user,request);const m=path.match(/^\/chat\/messages\/(\d+)$/);if(m&&request.method==='PATCH'){const id=Number(m[1]),msg=(await db(env,'messages',{query:`?select=id,user_id&id=eq.${id}&limit=1`}))?.[0];if(!msg||msg.user_id!==user.id)return fail('Forbidden.',403);const b=await request.json().catch(()=>({})),text=String(b.text||'').trim();if(!text||text.length>MAX_TEXT)return fail('Invalid message.');await db(env,'messages',{method:'PATCH',query:`?id=eq.${id}`,body:{text,edited_at:new Date().toISOString()},headers:{Prefer:'return=minimal'}});return json({ok:true})}if(m&&request.method==='DELETE'){const id=Number(m[1]),msg=(await db(env,'messages',{query:`?select=id,user_id&id=eq.${id}&limit=1`}))?.[0];if(!msg)return fail('Message not found.',404);if(msg.user_id!==user.id&&!['admin','superadmin'].includes(user.role))return fail('Forbidden.',403);await db(env,'messages',{method:'PATCH',query:`?id=eq.${id}`,body:{deleted_at:new Date().toISOString(),text:''},headers:{Prefer:'return=minimal'}});return json({ok:true})}const r=path.match(/^\/chat\/messages\/(\d+)\/reactions$/);if(r&&request.method==='POST'){const id=Number(r[1]),e=String((await request.json().catch(()=>({}))).emoji||'');if(!EMOJIS.has(e))return fail('Unsupported reaction.');const x=await db(env,'message_reactions',{query:`?select=message_id&message_id=eq.${id}&user_id=eq.${enc(user.id)}&emoji=eq.${enc(e)}&limit=1`});if(x?.length)await db(env,'message_reactions',{method:'DELETE',query:`?message_id=eq.${id}&user_id=eq.${enc(user.id)}&emoji=eq.${enc(e)}`});else await db(env,'message_reactions',{method:'POST',body:{message_id:id,user_id:user.id,emoji:e},headers:{Prefer:'return=minimal'}});return json({ok:true})}const sp=path.match(/^\/chat\/messages\/(\d+)\/(star|pin)$/);if(sp&&request.method==='POST'){const id=Number(sp[1]),table=sp[2]==='star'?'message_stars':'message_pins',x=await db(env,table,{query:`?select=message_id&message_id=eq.${id}&user_id=eq.${enc(user.id)}&limit=1`});if(x?.length)await db(env,table,{method:'DELETE',query:`?message_id=eq.${id}&user_id=eq.${enc(user.id)}`});else await db(env,table,{method:'POST',body:{message_id:id,user_id:user.id},headers:{Prefer:'return=minimal'}});return json({ok:true})}if(path==='/chat/search'&&request.method==='GET'){const q=String(url.searchParams.get('q')||'').trim();if(q.length<2)return json({ok:true,results:[]});const rows=await db(env,'messages',{query:`?select=id,channel_id,conversation_id,user_id,parent_message_id,text,created_at,edited_at,deleted_at&text=ilike.*${enc(q)}*&order=created_at.desc&limit=100`});return json({ok:true,results:await hydrate(env,rows,user.id)})}if(path==='/chat/read'&&request.method==='POST'){const b=await request.json().catch(()=>({}));if(b.conversationId)await db(env,'direct_members',{method:'PATCH',query:`?conversation_id=eq.${enc(b.conversationId)}&user_id=eq.${enc(user.id)}`,body:{last_read_at:new Date().toISOString()},headers:{Prefer:'return=minimal'}});if(b.channelId)await db(env,'channel_members',{method:'PATCH',query:`?channel_id=eq.${enc(b.channelId)}&user_id=eq.${enc(user.id)}`,body:{last_viewed_at:new Date().toISOString()},headers:{Prefer:'return=minimal'}});return json({ok:true})}if(path==='/chat/settings'&&request.method==='POST'){const b=await request.json().catch(()=>({})),patch={};for(const k of ['muted','starred','pinned','notification_level'])if(b[k]!==undefined)patch[k]=b[k];if(b.conversationId)await db(env,'direct_members',{method:'PATCH',query:`?conversation_id=eq.${enc(b.conversationId)}&user_id=eq.${enc(user.id)}`,body:patch,headers:{Prefer:'return=minimal'}});if(b.channelId)await db(env,'channel_members',{method:'PATCH',query:`?channel_id=eq.${enc(b.channelId)}&user_id=eq.${enc(user.id)}`,body:patch,headers:{Prefer:'return=minimal'}});return json({ok:true})}if(path==='/chat/notifications'&&request.method==='GET')return json({ok:true,notifications:await db(env,'notifications',{query:`?select=id,type,body,message_id,conversation_id,channel_id,read_at,created_at&user_id=eq.${enc(user.id)}&order=created_at.desc&limit=100`})});if(path==='/chat/notifications/read'&&request.method==='POST'){await db(env,'notifications',{method:'PATCH',query:`?user_id=eq.${enc(user.id)}&read_at=is.null`,body:{read_at:new Date().toISOString()},headers:{Prefer:'return=minimal'}});return json({ok:true})}if(path==='/chat/files'&&request.method==='GET'){
+export async function handleChatFeature(request,env,user){const url=new URL(request.url),path=url.pathname.replace(/\/+$/,'')||'/';if(!path.startsWith('/chat'))return null;try{if(request.method==='OPTIONS')return json({ok:true},204);if(path==='/chat/bootstrap'&&request.method==='GET')return bootstrap(env,user);if(path==='/chat/conversations'&&request.method==='POST')return createDm(env,user,await request.json().catch(()=>({})));if(path==='/chat/spaces'&&request.method==='POST')return createSpace(env,user,await request.json().catch(()=>({})));if(path==='/chat/messages'&&request.method==='GET'){const channelId=url.searchParams.get('channelId'),conversationId=url.searchParams.get('conversationId'),parent=url.searchParams.get('parentMessageId'),after=url.searchParams.get('after');if(!channelId&&!conversationId)return fail('Conversation target is required.');await target(env,user,{channelId,conversationId});let q=`?select=id,channel_id,conversation_id,user_id,parent_message_id,quoted_message_id,text,created_at,edited_at,deleted_at&order=created_at.asc&limit=300`;q+=channelId?`&channel_id=eq.${enc(channelId)}`:`&conversation_id=eq.${enc(conversationId)}`;q+=parent?`&parent_message_id=eq.${enc(parent)}`:'&parent_message_id=is.null';if(after)q+=`&created_at=gt.${enc(after)}`;return json({ok:true,messages:await hydrate(env,await db(env,'messages',{query:q}),user.id)})}if(path==='/chat/messages'&&request.method==='POST')return post(env,user,request);const m=path.match(/^\/chat\/messages\/(\d+)$/);if(m&&request.method==='PATCH'){const id=Number(m[1]),msg=(await db(env,'messages',{query:`?select=id,user_id&id=eq.${id}&limit=1`}))?.[0];if(!msg||msg.user_id!==user.id)return fail('Forbidden.',403);const b=await request.json().catch(()=>({})),text=String(b.text||'').trim();if(!text||text.length>MAX_TEXT)return fail('Invalid message.');await db(env,'messages',{method:'PATCH',query:`?id=eq.${id}`,body:{text,edited_at:new Date().toISOString()},headers:{Prefer:'return=minimal'}});return json({ok:true})}if(m&&request.method==='DELETE'){const id=Number(m[1]),msg=(await db(env,'messages',{query:`?select=id,user_id&id=eq.${id}&limit=1`}))?.[0];if(!msg)return fail('Message not found.',404);if(msg.user_id!==user.id&&!['admin','superadmin'].includes(user.role))return fail('Forbidden.',403);await db(env,'messages',{method:'PATCH',query:`?id=eq.${id}`,body:{deleted_at:new Date().toISOString(),text:''},headers:{Prefer:'return=minimal'}});return json({ok:true})}const r=path.match(/^\/chat\/messages\/(\d+)\/reactions$/);if(r&&request.method==='POST'){const id=Number(r[1]),e=String((await request.json().catch(()=>({}))).emoji||'');if(!EMOJIS.has(e))return fail('Unsupported reaction.');const x=await db(env,'message_reactions',{query:`?select=message_id&message_id=eq.${id}&user_id=eq.${enc(user.id)}&emoji=eq.${enc(e)}&limit=1`});if(x?.length)await db(env,'message_reactions',{method:'DELETE',query:`?message_id=eq.${id}&user_id=eq.${enc(user.id)}&emoji=eq.${enc(e)}`});else await db(env,'message_reactions',{method:'POST',body:{message_id:id,user_id:user.id,emoji:e},headers:{Prefer:'return=minimal'}});return json({ok:true})}const sp=path.match(/^\/chat\/messages\/(\d+)\/(star|pin)$/);if(sp&&request.method==='POST'){const id=Number(sp[1]),table=sp[2]==='star'?'message_stars':'message_pins',x=await db(env,table,{query:`?select=message_id&message_id=eq.${id}&user_id=eq.${enc(user.id)}&limit=1`});if(x?.length)await db(env,table,{method:'DELETE',query:`?message_id=eq.${id}&user_id=eq.${enc(user.id)}`});else await db(env,table,{method:'POST',body:{message_id:id,user_id:user.id},headers:{Prefer:'return=minimal'}});return json({ok:true})}if(path==='/chat/search'&&request.method==='GET'){
+  const q=String(url.searchParams.get('q')||'').trim();
+  if(q.length<2)return json({ok:true,results:[]});
+
+  const [spaces,directMemberships]=await Promise.all([
+    db(env,'channels',{query:'?select=id&limit=1000'}),
+    db(env,'direct_members',{query:'?select=conversation_id&user_id=eq.'+enc(user.id)+'&limit=1000'})
+  ]);
+  const channelIds=(spaces||[]).map(x=>x.id).filter(Boolean);
+  const conversationIds=[...new Set((directMemberships||[]).map(x=>x.conversation_id).filter(Boolean))];
+
+  const channelRows=channelIds.length
+    ? await db(env,'messages',{query:'?select=id,channel_id,conversation_id,user_id,parent_message_id,text,created_at,edited_at,deleted_at&channel_id=in.('+channelIds.join(',')+')&text=ilike.*'+enc(q)+'*&order=created_at.desc&limit=100'})
+    : [];
+  const directRows=conversationIds.length
+    ? await db(env,'messages',{query:'?select=id,channel_id,conversation_id,user_id,parent_message_id,text,created_at,edited_at,deleted_at&conversation_id=in.('+conversationIds.join(',')+')&text=ilike.*'+enc(q)+'*&order=created_at.desc&limit=100'})
+    : [];
+  const merged=[...(channelRows||[]),...(directRows||[])].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,100);
+  return json({ok:true,results:await hydrate(env,merged,user.id)});
+}if(path==='/chat/read'&&request.method==='POST'){const b=await request.json().catch(()=>({}));if(b.conversationId)await db(env,'direct_members',{method:'PATCH',query:`?conversation_id=eq.${enc(b.conversationId)}&user_id=eq.${enc(user.id)}`,body:{last_read_at:new Date().toISOString()},headers:{Prefer:'return=minimal'}});if(b.channelId)await db(env,'channel_members',{method:'PATCH',query:`?channel_id=eq.${enc(b.channelId)}&user_id=eq.${enc(user.id)}`,body:{last_viewed_at:new Date().toISOString()},headers:{Prefer:'return=minimal'}});return json({ok:true})}if(path==='/chat/settings'&&request.method==='POST'){const b=await request.json().catch(()=>({})),patch={};for(const k of ['muted','starred','pinned','notification_level'])if(b[k]!==undefined)patch[k]=b[k];if(b.conversationId)await db(env,'direct_members',{method:'PATCH',query:`?conversation_id=eq.${enc(b.conversationId)}&user_id=eq.${enc(user.id)}`,body:patch,headers:{Prefer:'return=minimal'}});if(b.channelId)await db(env,'channel_members',{method:'PATCH',query:`?channel_id=eq.${enc(b.channelId)}&user_id=eq.${enc(user.id)}`,body:patch,headers:{Prefer:'return=minimal'}});return json({ok:true})}if(path==='/chat/notifications'&&request.method==='GET')return json({ok:true,notifications:await db(env,'notifications',{query:`?select=id,type,body,message_id,conversation_id,channel_id,read_at,created_at&user_id=eq.${enc(user.id)}&order=created_at.desc&limit=100`})});if(path==='/chat/notifications/read'&&request.method==='POST'){await db(env,'notifications',{method:'PATCH',query:`?user_id=eq.${enc(user.id)}&read_at=is.null`,body:{read_at:new Date().toISOString()},headers:{Prefer:'return=minimal'}});return json({ok:true})}if(path==='/chat/files'&&request.method==='GET'){
   const p=String(url.searchParams.get('path')||'').trim();
   if(!p)return fail('File path required.');
 
