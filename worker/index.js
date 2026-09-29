@@ -353,12 +353,16 @@ function formatUser(user) {
 }
 
 async function touchUserActivity(env, userId) {
-  await supabaseFetch(env, "users", {
-    method: "PATCH",
-    query: `?id=eq.${encodeURIComponent(userId)}`,
-    body: { last_activity_at: new Date().toISOString() },
-    headers: { Prefer: "return=minimal" },
-  });
+  try {
+    await supabaseFetch(env, "users", {
+      method: "PATCH",
+      query: `?id=eq.${encodeURIComponent(userId)}`,
+      body: { last_activity_at: new Date().toISOString() },
+      headers: { Prefer: "return=minimal" },
+    });
+  } catch (err) {
+    console.warn("Non-critical user activity update failed.", err);
+  }
 }
 
 function isUniqueViolation(err) {
@@ -1044,7 +1048,7 @@ export default {
         const message = Array.isArray(messageRows) && messageRows.length ? messageRows[0] : null;
         if (!message) return error("File message not found.", 404);
 
-        const channel = await getChannelByName(env, message.channel_id);
+        const channel = await getChannelById(env, message.channel_id);
         if (!channel) return error("File channel not found.", 404);
         await ensureChannelMember(env, channel.id, user.id);
 
