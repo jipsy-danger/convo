@@ -1,7 +1,7 @@
 const WORKER_URL='https://convo-api.atityaramsureshmanickam.workers.dev';
 let currentPin=null,currentUser=null,currentChannels=[],activeChannel=null,hiddenPin='',superAdminMode=false,superAdminJArmed=false,superAdminSession='',autoSubmitting=false,appLoading=false,messageSyncTimer=null,messageSyncInFlight=false,lastMessageSignature='',activePage=1,lastPage=1,replyTarget=null,postingMessage=false;
 try{currentPin=localStorage.getItem('convo_active_pin')||null;currentUser=JSON.parse(localStorage.getItem('convo_user')||'null');superAdminSession=localStorage.getItem('convo_superadmin_session')||''}catch(e){console.warn('Convo storage unavailable; starting fresh',e)}
-const $=id=>document.getElementById(id),messagePageMenu=$('messagePageMenu'),authForm=$('authForm'),pinInput=$('pinInput'),superAdminKeyInput=$('superAdminKeyInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')],btnPagePrev=$('btnPagePrev'),btnPageNext=$('btnPageNext'),messagePageIndicator=$('messagePageIndicator'),btnComposerPlus=$('btnComposerPlus'),fileInput=$('fileInput'),fileUploadQueue=$('fileUploadQueue'),btnRenameChannel=$('btnRenameChannel'),renameChannelModal=$('renameChannelModal'),renameChannelForm=$('renameChannelForm'),renameChannelInput=$('renameChannelInput'),renameChannelError=$('renameChannelError'),btnCancelRenameChannel=$('btnCancelRenameChannel'),btnSubmitRenameChannel=$('btnSubmitRenameChannel'),replyComposer=$('replyComposer'),replyComposerAuthor=$('replyComposerAuthor'),replyComposerText=$('replyComposerText'),replyComposerClose=$('replyComposerClose');
+const $=id=>document.getElementById(id),messagePageMenu=$('messagePageMenu'),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')],btnPagePrev=$('btnPagePrev'),btnPageNext=$('btnPageNext'),messagePageIndicator=$('messagePageIndicator'),btnComposerPlus=$('btnComposerPlus'),fileInput=$('fileInput'),fileUploadQueue=$('fileUploadQueue'),btnRenameChannel=$('btnRenameChannel'),renameChannelModal=$('renameChannelModal'),renameChannelForm=$('renameChannelForm'),renameChannelInput=$('renameChannelInput'),renameChannelError=$('renameChannelError'),btnCancelRenameChannel=$('btnCancelRenameChannel'),btnSubmitRenameChannel=$('btnSubmitRenameChannel'),replyComposer=$('replyComposer'),replyComposerAuthor=$('replyComposerAuthor'),replyComposerText=$('replyComposerText'),replyComposerClose=$('replyComposerClose');
 const esc=value=>String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
 const formatTime=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'':d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
 function focusAccess(){try{pinInput.focus({preventScroll:true})}catch(e){pinInput.focus()}}
@@ -19,14 +19,6 @@ function applyPinValue(raw){
   }
   value=value.replace(/\D/g,'').slice(0,4);
   pinInput.value=value;
-  if(superAdminMode&&superAdminKeyInput){
-    superAdminKeyInput.hidden=value.length<4;
-    if(value.length<4){
-      superAdminKeyInput.value='';
-    }else{
-      requestAnimationFrame(()=>superAdminKeyInput.focus({preventScroll:true}));
-    }
-  }
   if(value!==hiddenPin){
     hiddenPin=value;
     autoSubmitting=false;
@@ -46,21 +38,15 @@ function readCachedChannels(){try{const parsed=JSON.parse(localStorage.getItem(C
 function writeCachedChannels(channels){try{localStorage.setItem(CHANNEL_CACHE_KEY,JSON.stringify(channels))}catch(e){}}
 let superAdminHoldTimer=null,superAdminHoldActive=false;
 function bumpCore(className){accessCore.classList.remove('admin-bump','hold-bump');void accessCore.offsetWidth;accessCore.classList.add(className);setTimeout(()=>accessCore.classList.remove(className),420)}
-function resetSuperAdminArming(){clearTimeout(superAdminHoldTimer);superAdminHoldTimer=null;superAdminHoldActive=false;superAdminJArmed=false;superAdminMode=false;if(superAdminKeyInput){superAdminKeyInput.value='';superAdminKeyInput.hidden=true}authOverlay.classList.remove('super-mode')}
+function resetSuperAdminArming(){clearTimeout(superAdminHoldTimer);superAdminHoldTimer=null;superAdminHoldActive=false;superAdminJArmed=false;superAdminMode=false;authOverlay.classList.remove('super-mode')}
 function armSuperAdminGesture(){if(superAdminHoldActive)return;superAdminHoldActive=true;superAdminJArmed=true;authOverlay.classList.add('super-mode');pinInput.type='text';pinInput.inputMode='text';pinInput.value='';hiddenPin='';hudStatus.textContent='ACCESS CORE ARMED';hudHint.textContent='';bumpCore('hold-bump');focusAccess()}
 function cancelSuperAdminGesture(){clearTimeout(superAdminHoldTimer);superAdminHoldTimer=null}
 function beginSuperAdminHold(e){if(superAdminMode)return;e.preventDefault();cancelSuperAdminGesture();superAdminHoldTimer=setTimeout(armSuperAdminGesture,3000)}
 function endSuperAdminHold(){cancelSuperAdminGesture()}
 accessCore.addEventListener('pointerdown',beginSuperAdminHold,{passive:false});['pointerup','pointercancel','pointerleave'].forEach(t=>accessCore.addEventListener(t,endSuperAdminHold,{passive:true}));accessCore.addEventListener('contextmenu',e=>e.preventDefault());
-function confirmSuperAdminJ(){if(!superAdminJArmed||superAdminMode)return;superAdminMode=true;superAdminJArmed=false;pinInput.type='password';pinInput.inputMode='numeric';pinInput.value='';hiddenPin='';if(superAdminKeyInput)superAdminKeyInput.hidden=true;hudStatus.textContent='ACCESS CORE READY';hudHint.textContent='ENTER 4-DIGIT PIN';bumpCore('admin-bump');focusAccess()}
+function confirmSuperAdminJ(){if(!superAdminJArmed||superAdminMode)return;superAdminMode=true;superAdminJArmed=false;pinInput.type='password';pinInput.inputMode='numeric';pinInput.value='';hiddenPin='';hudStatus.textContent='ACCESS CORE READY';hudHint.textContent='ENTER 4-DIGIT PIN';bumpCore('admin-bump');focusAccess()}
 window.addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();hiddenPin='';pinInput.value='';pinInput.type='password';pinInput.inputMode='numeric';autoSubmitting=false;resetSuperAdminArming();authOverlay.classList.remove('super-mode','denied');hudStatus.textContent='ACCESS SYSTEM READY';hudHint.textContent='ENTER ACCESS CODE';updateHud();closeSuperAdminPanel();focusAccess();return}if(superAdminJArmed&&!superAdminMode&&(e.key==='j'||e.key==='J')){e.preventDefault();confirmSuperAdminJ()}});
 pinInput.addEventListener('input',e=>applyPinValue(e.target.value));
-superAdminKeyInput?.addEventListener('keydown',e=>{
-  if(e.key==='Enter'){
-    e.preventDefault();
-    authForm.requestSubmit();
-  }
-});
 window.addEventListener('keydown',e=>{
   if(!authOverlayVisible())return;
   if(e.code==='Escape')return;
@@ -94,19 +80,18 @@ authForm.addEventListener('submit',e=>{e.preventDefault();if(!btnLogin.disabled)
 accessCore.addEventListener('click',e=>{e.preventDefault();if(hiddenPin.length===4)authForm.requestSubmit();else focusAccess()});
 async function login(){
   if(hiddenPin.length!==4){hudStatus.textContent='ACCESS CODE REQUIRED';authOverlay.classList.add('denied');autoSubmitting=false;focusAccess();return}
-  const name=nameInput.value.trim(),isSuperAdmin=superAdminMode&&hiddenPin==='4999',superAdminCode=isSuperAdmin?(superAdminKeyInput?.value||'').trim():'';
-  if(isSuperAdmin&&!superAdminCode){hudStatus.textContent='SUPER ADMIN KEY REQUIRED';authOverlay.classList.add('denied');autoSubmitting=false;superAdminKeyInput?.focus();return}
+  const name=nameInput.value.trim(),isSuperAdmin=superAdminMode&&hiddenPin==='4999';
   try{
     btnLogin.textContent='VERIFYING';btnLogin.disabled=true;hudStatus.textContent=isSuperAdmin?'ACCESS CORE VERIFYING':'IDENTITY VERIFYING';hudHint.textContent=isSuperAdmin?'VERIFYING SECOND FACTOR':'AUTHENTICATING';authOverlay.classList.remove('denied');authOverlay.classList.add('checking');
     const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);let r,d;
-    try{r=await fetch(WORKER_URL+'/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:hiddenPin,name,isSuperAdmin,superAdminCode}),signal:controller.signal});d=await r.json()}catch(err){if(err?.name==='AbortError')throw new Error('Authentication timed out after 12s.');throw err}finally{clearTimeout(timeout)}
+    try{r=await fetch(WORKER_URL+'/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:hiddenPin,name,isSuperAdmin}),signal:controller.signal});d=await r.json()}catch(err){if(err?.name==='AbortError')throw new Error('Authentication timed out after 12s.');throw err}finally{clearTimeout(timeout)}
     if(!r.ok)throw new Error(d.error||'Authentication failed');
     if(d.isNew&&!name&&newUserNameBlock.style.display==='none'){newUserNameBlock.style.display='block';btnLogin.textContent='COMPLETE IDENTITY';btnLogin.disabled=false;hudStatus.textContent='NEW IDENTITY DETECTED';hudHint.textContent='ENTER DISPLAY NAME';authOverlay.classList.remove('checking');autoSubmitting=false;nameInput.focus();return}
     currentPin=d.assignedPin||hiddenPin;currentUser=d.user;superAdminSession=d.superAdminSession||'';if(currentUser?.role!=='superadmin')superAdminSession='';
     try{if(superAdminSession)localStorage.setItem('convo_superadmin_session',superAdminSession);else localStorage.removeItem('convo_superadmin_session');localStorage.setItem('convo_active_pin',currentPin);localStorage.setItem('convo_user',JSON.stringify(currentUser))}catch(e){}
     if(Array.isArray(d.channels)&&d.channels.length){currentChannels=d.channels;writeCachedChannels(currentChannels);renderChannels()}
     hudStatus.textContent=d.assignedPin?'IDENTITY CREATED':'ACCESS GRANTED';hudHint.textContent=d.assignedPin?'NEW PIN: '+d.assignedPin:(isSuperAdmin?'SUPER ADMIN CORE ONLINE':'IDENTITY VERIFIED');authOverlay.classList.remove('checking','denied');authOverlay.classList.add('granted');authOverlay.style.display='none';requestAnimationFrame(()=>initApp())
-  }catch(err){console.error(err);hudStatus.textContent='ACCESS DENIED';hudHint.textContent='TRY AGAIN';authOverlay.classList.remove('checking','granted');authOverlay.classList.add('denied');btnLogin.textContent='INITIALIZE';autoSubmitting=false;hiddenPin='';pinInput.value='';if(superAdminKeyInput){superAdminKeyInput.value='';superAdminKeyInput.hidden=true}updateHud();alert(err.message||'Failed to connect to authentication server.');focusAccess()}finally{btnLogin.disabled=false}
+  }catch(err){console.error(err);resetSuperAdminArming();hudStatus.textContent='ACCESS DENIED';hudHint.textContent='TRY AGAIN';authOverlay.classList.remove('checking','granted');authOverlay.classList.add('denied');btnLogin.textContent='INITIALIZE';autoSubmitting=false;hiddenPin='';pinInput.value='';pinInput.type='password';pinInput.inputMode='numeric';updateHud();alert(err.message||'Failed to connect to authentication server.');focusAccess()}finally{btnLogin.disabled=false}
 }
 window.login=login;
 async function loadChannels(preferredName=null,select=true){if(!currentChannels.length){const cached=readCachedChannels();if(cached.length){currentChannels=cached;renderChannels()}}let networkError=null;try{const d=await api('/channels',{timeoutMs:10000});if(Array.isArray(d.channels)&&d.channels.length){currentChannels=d.channels;writeCachedChannels(currentChannels);renderChannels()}}catch(err){networkError=err;console.warn('Channel sync failed; using cached channels when available.',err)}const targetName=preferredName||activeChannel?.name||'general',target=currentChannels.find(c=>c.name===targetName)||currentChannels[0];if(select&&target)await selectChannel(target.name,false);if(networkError&&!target)throw networkError;return target}
@@ -740,7 +725,7 @@ superAdminLauncher.addEventListener('click',()=>superAdminPanel.classList.contai
 async function initApp(force=false){if(!currentUser||appLoading&&!force)return;appLoading=true;$('userDisplayName').textContent=currentUser.name||'';$('btnCreateChannel').style.display='inline-flex';$('superAdminLauncher').hidden=currentUser.role!=='superadmin';closeSuperAdminPanel();if(!currentChannels.length){const cached=readCachedChannels();if(cached.length){currentChannels=cached}}if(!currentChannels.length){currentChannels=[{id:'general-local',name:'general',description:'Common community thread'}]}renderChannels();const initial=currentChannels.find(c=>c.name==='general')||currentChannels[0];if(initial){activeChannel=initial;$('activeChannelHeading').textContent='# '+initial.name;$('activeChannelDesc').textContent=initial.description||'Project discussion';renderChannels();$('messagesFeed').innerHTML='<div class="state-message">Loading messages...</div>'}loadChannels(null,false).then(async target=>{if(!target)return;await selectChannel(target.name,false)}).catch(err=>{console.warn('Workspace sync failed after shell load.',err)}).finally(()=>{if(currentUser?.role==='superadmin')Promise.allSettled([loadAdminUsers(),loadAdminAnalytics()])});appLoading=false}
 if(currentUser?.role==='superadmin'&&!superAdminSession){
   try{localStorage.removeItem('convo_active_pin');localStorage.removeItem('convo_user');localStorage.removeItem('convo_superadmin_session')}catch(e){}
-  currentPin=null;currentUser=null;
+  currentPin=null;currentUser=null;hiddenPin='';pinInput.value='';resetSuperAdminArming();authOverlay.classList.remove('denied','checking','granted');hudStatus.textContent='ACCESS SYSTEM READY';hudHint.textContent='ENTER ACCESS CODE';updateHud();
 }
 window.convoApi=api;
 window.convoLoadChannels=loadChannels;
