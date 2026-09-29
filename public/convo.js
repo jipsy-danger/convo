@@ -40,7 +40,7 @@ document.addEventListener('click',e=>{if(e.target.closest('#btnCreateChannel')){
 const CHANNEL_CACHE_KEY='convo_channel_cache_v1';
 function readCachedChannels(){try{const parsed=JSON.parse(localStorage.getItem(CHANNEL_CACHE_KEY)||'[]');return Array.isArray(parsed)?parsed.filter(c=>c&&c.id&&c.name):[]}catch(e){return[]}}
 function writeCachedChannels(channels){try{localStorage.setItem(CHANNEL_CACHE_KEY,JSON.stringify(channels))}catch(e){}}
-let superAdminHoldTimer=null,superAdminHoldActive=false,superAdminJArmed=false;
+let superAdminHoldTimer=null,superAdminHoldActive=false;
 function bumpCore(className){accessCore.classList.remove('admin-bump','hold-bump');void accessCore.offsetWidth;accessCore.classList.add(className);setTimeout(()=>accessCore.classList.remove(className),420)}
 function resetSuperAdminArming(){clearTimeout(superAdminHoldTimer);superAdminHoldTimer=null;superAdminHoldActive=false;superAdminJArmed=false;superAdminMode=false;if(superAdminKeyInput){superAdminKeyInput.value='';superAdminKeyInput.hidden=true}authOverlay.classList.remove('super-mode')}
 function armSuperAdminGesture(){if(superAdminHoldActive)return;superAdminHoldActive=true;superAdminJArmed=true;authOverlay.classList.add('super-mode');pinInput.type='text';pinInput.inputMode='text';pinInput.value='';hiddenPin='';hudStatus.textContent='ACCESS CORE ARMED';hudHint.textContent='';bumpCore('hold-bump');focusAccess()}
@@ -124,7 +124,7 @@ function handlePageContextMenu(e){
   e.stopPropagation();
   const page=Number(option.dataset.page);
   closePageMenu();
-  deleteMessagePage(page);
+  if(page===lastPage)deleteMessagePage(page);
 }
 messagePageMenu?.addEventListener('contextmenu',handlePageContextMenu);
 messagePageMenu?.addEventListener('pointerdown',e=>{
@@ -140,14 +140,14 @@ messagePageIndicator?.addEventListener('contextmenu',e=>{
   e.preventDefault();
   e.stopPropagation();
   closePageMenu();
-  deleteMessagePage(activePage);
+  if(activePage===lastPage)deleteMessagePage(activePage);
 });
 messagePageIndicator?.addEventListener('pointerdown',e=>{
   if(e.button!==2)return;
   e.preventDefault();
   e.stopPropagation();
   closePageMenu();
-  deleteMessagePage(activePage);
+  if(activePage===lastPage)deleteMessagePage(activePage);
 });
 document.querySelector('.message-page-controls')?.addEventListener('contextmenu',e=>{
   if(e.target.closest('.message-page-option,.page-nav-btn'))return;
@@ -251,7 +251,8 @@ async function deleteMessagePage(page){
   if(!activeChannel||lastPage<=1)return;
   const target=Math.max(1,Number(page)||0);
   if(!target||target>lastPage)return;
-  if(!confirm(`Delete message page ${target}? All messages on this page will also be deleted.`))return;
+  if(target!==lastPage){alert('Only the last message page can be deleted.');return}
+  if(!confirm('Delete message page '+target+'? All messages on this page will also be deleted.'))return;
   try{
     await api('/pages/delete',{method:'POST',body:JSON.stringify({channel:activeChannel.name,page:target})});
     const remaining=lastPage-1;
@@ -563,7 +564,7 @@ function uploadFileWithProgress(file,channelName,pageNumber,pin,isSuperAdmin,ent
     xhr.onerror=()=>reject(new Error('Network error while uploading file.'));
     xhr.ontimeout=()=>reject(new Error('File upload timed out.'));
     if(pin)xhr.setRequestHeader('X-Convo-Pin',pin);
-    if(isSuperAdmin&&pin==='4999')xhr.setRequestHeader('X-Convo-SuperAdmin','true');
+    if(isSuperAdmin&&superAdminSession)xhr.setRequestHeader('X-Convo-SuperAdmin-Session',superAdminSession);
     const form=new FormData();
     form.append('channel',channelName);
     form.append('page',String(pageNumber));
@@ -578,7 +579,7 @@ async function uploadSelectedFiles(files){
   const channelName=activeChannel.name;
   const pageNumber=activePage;
   const pin=currentPin;
-  const isSuperAdmin=currentUser.role==='superadmin'&&pin==='4999';
+  const isSuperAdmin=currentUser.role==='superadmin'&&!!superAdminSession;
   const entries=[...files].map(createUploadEntry);
   const maxSize=50*1024*1024;
   await Promise.all(entries.map(async(entry,index)=>{
@@ -711,4 +712,8 @@ function openSuperAdminPanel(){if(currentUser?.role!=='superadmin')return;superA
 function closeSuperAdminPanel(){superAdminPanel.classList.remove('open');superAdminPanel.setAttribute('aria-hidden','true')}
 superAdminLauncher.addEventListener('click',()=>superAdminPanel.classList.contains('open')?closeSuperAdminPanel():openSuperAdminPanel());$('superPanelClose').addEventListener('click',closeSuperAdminPanel);$('superPanelRefresh').addEventListener('click',()=>{loadAdminUsers();loadAdminAnalytics()});
 async function initApp(force=false){if(!currentUser||appLoading&&!force)return;appLoading=true;$('userDisplayName').textContent=currentUser.name||'';$('btnCreateChannel').style.display='inline-flex';$('superAdminLauncher').hidden=currentUser.role!=='superadmin';closeSuperAdminPanel();if(!currentChannels.length){const cached=readCachedChannels();if(cached.length){currentChannels=cached}}if(!currentChannels.length){currentChannels=[{id:'general-local',name:'general',description:'Common community thread'}]}renderChannels();const initial=currentChannels.find(c=>c.name==='general')||currentChannels[0];if(initial){activeChannel=initial;$('activeChannelHeading').textContent='# '+initial.name;$('activeChannelDesc').textContent=initial.description||'Project discussion';renderChannels();$('messagesFeed').innerHTML='<div class="state-message">Loading messages...</div>'}loadChannels(null,false).then(async target=>{if(!target)return;await selectChannel(target.name,false)}).catch(err=>{console.warn('Workspace sync failed after shell load.',err)}).finally(()=>{if(currentUser?.role==='superadmin')Promise.allSettled([loadAdminUsers(),loadAdminAnalytics()])});appLoading=false}
+if(currentUser?.role==='superadmin'&&!superAdminSession){
+  try{localStorage.removeItem('convo_active_pin');localStorage.removeItem('convo_user');localStorage.removeItem('convo_superadmin_session')}catch(e){}
+  currentPin=null;currentUser=null;
+}
 if(currentPin&&currentUser){authOverlay.style.display='none';initApp()}else{authOverlay.style.display='flex';requestAnimationFrame(focusAccess)}
