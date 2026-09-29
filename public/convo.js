@@ -38,7 +38,7 @@ function applyPinValue(raw){
     }
   }
 }
-async function api(path,options={}){const {timeoutMs=12000,...requestOptions}=options;const headers={...(requestOptions.headers||{})};if(requestOptions.body!==undefined&&!headers['Content-Type'])headers['Content-Type']='application/json';if(currentPin)headers['X-Convo-Pin']=currentPin;if(currentUser?.role==='superadmin'&&superAdminSession)headers['X-Convo-SuperAdmin-Session']=superAdminSession;const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),timeoutMs);try{const r=await fetch(`${WORKER_URL}${path}`,{...requestOptions,headers,cache:'no-store',signal:requestOptions.signal||controller.signal}),t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{d={error:t}}if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d}catch(err){if(err?.name==='AbortError'&&requestOptions.signal===undefined)throw new Error(`Request timed out after ${Math.round(timeoutMs/1000)}s.`);throw err}finally{clearTimeout(timer)}}
+async function api(path,options={}){const {timeoutMs=12000,...requestOptions}=options;const headers={...(requestOptions.headers||{})};if(requestOptions.body!==undefined&&!headers['Content-Type'])headers['Content-Type']='application/json';if(currentPin)headers['X-Convo-Pin']=currentPin;if(currentUser?.role==='superadmin'&&superAdminSession)headers['X-Convo-SuperAdmin-Session']=superAdminSession;const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),timeoutMs);try{const r=await fetch(`${WORKER_URL}${path}`,{...requestOptions,headers,cache:'no-store',signal:requestOptions.signal||controller.signal}),t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{d={error:t}}if(!r.ok){const error=new Error(d.error||`Request failed (${r.status})`);error.status=r.status;throw error}return d}catch(err){if(err?.name==='AbortError'&&requestOptions.signal===undefined)throw new Error(`Request timed out after ${Math.round(timeoutMs/1000)}s.`);throw err}finally{clearTimeout(timer)}}
 function showAppError(message){console.error(message);hudStatus.textContent='CONNECTION ERROR';hudHint.textContent='CHECK WORKER ACCESS'}
 document.addEventListener('click',e=>{if(e.target.closest('#btnCreateChannel')){e.preventDefault();openChannelModal()}});
 const CHANNEL_CACHE_KEY='convo_channel_cache_v1';
@@ -253,7 +253,13 @@ async function syncActiveMessages(preserveScroll=true){
         scrollMessagesToBottom();
       }
     }
-  }catch(err){console.warn('Background message sync failed.',err)}
+  }catch(err){
+    console.warn('Background message sync failed.',err);
+    if(err?.status===403&&activeChannel?.isPrivate){
+      $('messagesFeed').innerHTML='<div class="state-message">Private channel access has been removed.</div>';
+      await loadChannels('general',true).catch(()=>{});
+    }
+  }
   finally{messageSyncInFlight=false}
 }
 
@@ -321,8 +327,14 @@ async function selectChannel(channelName,reportActivity=true){
     const loaded=await loadActivePage(false);
     if(!loaded)return;
   }catch(err){
-    $('messagesFeed').innerHTML='<div class="state-message">Unable to load this channel.</div>';
-    showAppError(err);
+    $('messagesFeed').innerHTML=err?.status===403
+      ? '<div class="state-message">You are not a member of this private channel.</div>'
+      : '<div class="state-message">Unable to load this channel.</div>';
+    if(err?.status===403){
+      await loadChannels('general',true).catch(()=>{});
+    }else{
+      showAppError(err);
+    }
     return;
   }
   if(reportActivity){
@@ -718,7 +730,7 @@ $('btnCreateChannel')?.addEventListener('click',e=>{e.preventDefault();openChann
 channelForm.addEventListener('submit',async e=>{e.preventDefault();if(!currentUser)return;const name=channelNameInput.value.trim(),description=channelDescriptionInput.value.trim()||'Project discussion';if(!name){channelModalError.textContent='Channel name is required.';channelNameInput.focus();return}btnSubmitChannel.disabled=true;btnSubmitChannel.textContent='Creating...';channelModalError.textContent='';try{const d=await api('/channels',{method:'POST',body:JSON.stringify({name,description})});closeChannelModal();await loadChannels(d.channel?.name||name.trim().toLowerCase())}catch(err){channelModalError.textContent=err.message||'Unable to create channel.';btnSubmitChannel.disabled=false;btnSubmitChannel.textContent='Create'}});$('btnCancelChannel').addEventListener('click',closeChannelModal);document.querySelector('[data-close-channel-modal]').addEventListener('click',closeChannelModal);
 async function deleteChannelById(channelId){const channel=currentChannels.find(c=>c.id===channelId);if(!channel||channel.name==='general')return;if(channel.isPrivate?currentUser?.role!=='superadmin':!['admin','superadmin'].includes(currentUser?.role))return;if(!confirm(`Delete #${channel.name} and its messages?`))return;try{await api('/channels/delete',{method:'POST',body:JSON.stringify({id:channel.id})});if(activeChannel?.id===channel.id)activeChannel=null;await loadChannels(activeChannel?.name||'general')}catch(err){alert(err.message||'Unable to delete channel.')}};
 window.deleteCurrentGroup=async function(){if(!activeChannel||activeChannel.name==='general')return;if(activeChannel.isPrivate?currentUser?.role!=='superadmin':!['admin','superadmin'].includes(currentUser?.role))return;await deleteChannelById(activeChannel.id)};
-async function loadAdminUsers(){if(currentUser?.role!=='superadmin')return;const rows=$('adminUserRows');rows.innerHTML='<div class="state-message">Loading authority data...</div>';try{const d=await api('/users'),users=Array.isArray(d.users)?d.users:[];rows.replaceChildren();users.forEach(user=>{const row=document.createElement('div');row.className='admin-user-row';row.innerHTML=`<span class="admin-user-main"><strong>${esc(user.name)}</strong><small>PIN ${esc(user.pin)}</small></span><span class="admin-user-role">${esc(user.role)}</span>${user.pin!==currentUser.pin?`<button type="button" class="btn-ctrl" data-user-id="${esc(user.id)}" data-role="${esc(user.role==='admin'?'user':'admin')}">${user.role==='admin'?'Make User':'Make Admin'}</button>`:''}`;const action=row.querySelector('button');if(action)action.addEventListener('click',()=>changeUserRole(action.dataset.userId,action.dataset.role));rows.appendChild(row)})}catch(err){rows.innerHTML='<div class="state-message">Authority data unavailable.</div>';showAppError(err)}}
+async function loadAdminUsers(){if(currentUser?.role!=='superadmin')return;const rows=$('adminUserRows');rows.innerHTML='<div class="state-message">Loading authority data...</div>';try{const d=await api('/users'),users=Array.isArray(d.users)?d.users:[];rows.replaceChildren();users.forEach(user=>{const row=document.createElement('div');row.className='admin-user-row';row.innerHTML=`<span class="admin-user-main"><strong>${esc(user.name)}</strong><small>PIN ${esc(user.pin)}</small></span><span class="admin-user-role">${esc(user.role)}</span>${String(user.id)!==String(currentUser.id)?`<button type="button" class="btn-ctrl" data-user-id="${esc(user.id)}" data-role="${esc(user.role==='admin'?'user':'admin')}">${user.role==='admin'?'Make User':'Make Admin'}</button>`:''}`;const action=row.querySelector('button');if(action)action.addEventListener('click',()=>changeUserRole(action.dataset.userId,action.dataset.role));rows.appendChild(row)})}catch(err){rows.innerHTML='<div class="state-message">Authority data unavailable.</div>';showAppError(err)}}
 async function changeUserRole(id,role){try{await api('/users/role',{method:'PUT',body:JSON.stringify({id,role})});await loadAdminUsers();await loadAdminAnalytics()}catch(err){alert(err.message||'Unable to change user role.')}}
 async function loadAdminAnalytics(){if(currentUser?.role!=='superadmin')return;try{const d=await api('/analytics'),s=d.stats||{};$('superAdminStats').innerHTML=`<div><b>${Number(s.totalUsers||0)}</b><span>Users</span></div><div><b>${Number(s.totalAdmins||0)}</b><span>Admins</span></div><div><b>${Number(s.totalMessages||0)}</b><span>Messages</span></div><div><b>${Number(s.activeUsers||0)}</b><span>Active</span></div>`;$('superAdminActivity').innerHTML=`<div><span>Channels</span><b>${Number(s.totalChannels||0)}</b></div><div><span>Active channels</span><b>${Number(s.activeChannels||0)}</b></div><div><span>Views</span><b>${Number(s.totalViews||0)}</b></div><div><span>Generated</span><b>${esc(formatTime(d.generatedAt))}</b></div>`}catch(err){$('superAdminActivity').textContent='Analytics unavailable.';console.error(err)}}
 const superAdminLauncher=$('superAdminLauncher'),superAdminPanel=$('superAdminPanel');
