@@ -10,6 +10,8 @@ const MAX_CHANNEL_LENGTH = 40;
 const ATTACHMENT_BUCKET = "convo-files";
 const FILE_LIFETIME_MS = 5 * 60 * 60 * 1000;
 const DOWNLOAD_TOKEN_TTL_MS = 5 * 60 * 1000;
+const SUPERADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const SUPERADMIN_PIN = "4999";
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 let lastAttachmentCleanupAt = 0;
 
@@ -18,7 +20,7 @@ function cors(extra = {}) {
     ...JSON_HEADERS,
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Convo-Pin, X-Convo-SuperAdmin, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, X-Convo-Pin, X-Convo-SuperAdmin-Session, Authorization",
     "Access-Control-Max-Age": "86400",
     ...extra,
   };
@@ -193,6 +195,49 @@ async function createDownloadToken(env, attachmentId) {
   return `${payload}.${bytesToBase64Url(new Uint8Array(signature))}`;
 }
 
+async function verifySuperAdminSession(env, token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+
+  let payload;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(parts[0])));
+  } catch {
+    return null;
+  }
+
+  if (payload?.role !== "superadmin" || !Number.isInteger(Number(payload?.id))) return null;
+  if (!Number.isFinite(Number(payload?.exp)) || Number(payload.exp) <= Date.now()) return null;
+
+  const key = await getDownloadTokenKey(env);
+  const valid = await crypto.subtle.verify(
+    "HMAC",
+    key,
+    base64UrlToBytes(parts[1]),
+    new TextEncoder().encode(parts[0])
+  );
+  return valid ? payload : null;
+}
+
+async function createSuperAdminSession(env, userId) {
+  const payload = bytesToBase64Url(
+    new TextEncoder().encode(
+      JSON.stringify({
+        id: Number(userId),
+        role: "superadmin",
+        exp: Date.now() + SUPERADMIN_SESSION_TTL_MS,
+      })
+    )
+  );
+  const key = await getDownloadTokenKey(env);
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(payload)
+  );
+  return payload + "." + bytesToBase64Url(new Uint8Array(signature));
+}
+
 async function verifyDownloadToken(env, token) {
   const parts = String(token || "").split(".");
   if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
@@ -341,7 +386,7 @@ async function getBootstrapChannels(env) {
   }
 }
 
-async function authenticate(env, pin, name, requestedSuperAdmin) {
+async function authenticate(env, pin, name, requestedSuperAdmin, superAdminCode) {
   if (!validPin(pin)) return error("PIN must be exactly 4 digits.", 401);
 
   const namespace = requestedSuperAdmin ? "superadmin" : "normal";
@@ -363,23 +408,39 @@ async function authenticate(env, pin, name, requestedSuperAdmin) {
   }
 
   if (requestedSuperAdmin) {
-    if (pin !== "4999") {
-      return error("Invalid Super Admin access code.", 401);
+    if (pin !== SUPERADMIN_PIN) {
+      return error("Invalid Super Admin PIN.", 401);
+    }
+    if (!env.CONVO_SUPERADMIN_KEY) {
+      return error("Super Admin key is not configured on the Worker.", 500);
+    }
+    if (String(superAdminCode || "") !== String(env.CONVO_SUPERADMIN_KEY)) {
+      return error("Invalid Super Admin key.", 401);
     }
 
-    const inserted = await supabaseFetch(env, "users", {
-      method: "POST",
-      query: "?select=id,pin,name,role,created_at,last_activity_at",
-      body: { pin: "4999", name: "Atitya", role: "superadmin" },
-      headers: { Prefer: "return=representation" },
-    });
+    if (!user) {
+      const inserted = await supabaseFetch(env, "users", {
+        method: "POST",
+        query: "?select=id,pin,name,role,created_at,last_activity_at",
+        body: { pin: SUPERADMIN_PIN, name: "Atitya", role: "superadmin" },
+        headers: { Prefer: "return=representation" },
+      });
+      user = Array.isArray(inserted) ? inserted[0] : inserted;
+      return response({
+        ok: true,
+        isNew: true,
+        user: formatUser(user),
+        channels: await bootstrapPromise,
+        superAdminSession: await createSuperAdminSession(env, user.id),
+      });
+    }
 
-    user = Array.isArray(inserted) ? inserted[0] : inserted;
     return response({
       ok: true,
-      isNew: true,
+      isNew: false,
       user: formatUser(user),
       channels: await bootstrapPromise,
+      superAdminSession: await createSuperAdminSession(env, user.id),
     });
   }
 
@@ -407,15 +468,31 @@ async function authenticate(env, pin, name, requestedSuperAdmin) {
 }
 
 async function requireUser(env, request) {
+  const superAdminSession = request.headers.get("X-Convo-SuperAdmin-Session") || "";
+  if (superAdminSession) {
+    const payload = await verifySuperAdminSession(env, superAdminSession);
+    if (!payload) throw Object.assign(new Error("Unauthorized"), { status: 401 });
+    const user = await getUserById(env, payload.id);
+    if (!user || user.role !== "superadmin") {
+      throw Object.assign(new Error("Unauthorized"), { status: 401 });
+    }
+    return user;
+  }
+
   const pin = request.headers.get("X-Convo-Pin") || "";
   if (!validPin(pin)) throw Object.assign(new Error("Unauthorized"), { status: 401 });
 
-  const namespace = request.headers.get("X-Convo-SuperAdmin") === "true"
-    ? "superadmin"
-    : "normal";
-  const user = await getUserByPin(env, pin, namespace);
+  const user = await getUserByPin(env, pin, "normal");
   if (!user) throw Object.assign(new Error("Unauthorized"), { status: 401 });
   return user;
+}
+
+async function getChannelById(env, id) {
+  const channels = await supabaseFetch(env, "channels", {
+    query:
+      `?select=id,name,description,created_by,created_at&id=eq.${encodeURIComponent(id)}&limit=1`,
+  });
+  return Array.isArray(channels) && channels.length ? channels[0] : null;
 }
 
 async function getChannelByName(env, name) {
@@ -562,8 +639,12 @@ async function getMessagesForChannel(env, channelId, pageNumber = null) {
         `?select=id,channel_id,page_number,starts_at,created_at&channel_id=eq.${encodeURIComponent(channelId)}&page_number=eq.${encodeURIComponent(pageNumber)}&limit=1`,
     });
     page = Array.isArray(pages) && pages.length ? pages[0] : null;
+    if (!page) {
+      throw Object.assign(new Error("Message page not found."), { status: 404 });
+    }
+  } else {
+    page = await getLastChannelPage(env, channelId);
   }
-  if (!page) page = await getLastChannelPage(env, channelId);
   if (!page) return [];
 
   const rows = await supabaseFetch(env, "messages", {
@@ -609,17 +690,30 @@ async function getMessagesForChannel(env, channelId, pageNumber = null) {
   const attachments = messageIds.length
     ? await supabaseFetch(env, "message_attachments", {
         query:
-          `?select=id,message_id,file_name,mime_type,file_size,expires_at&message_id=in.(${messageIds
+          `?select=id,message_id,file_name,mime_type,file_size,expires_at,deleted_at&message_id=in.(${messageIds
             .map((id) => encodeURIComponent(id))
-            .join(",")})&expires_at=gt.${encodeURIComponent(
-            new Date().toISOString()
-          )}&deleted_at=is.null&order=id.asc`,
+            .join(",")})&order=id.asc`,
       })
     : [];
 
   const attachmentsByMessage = new Map();
+  const expiredAttachmentCountByMessage = new Map();
   for (const attachment of Array.isArray(attachments) ? attachments : []) {
     const key = String(attachment.message_id);
+    const expiresAt = Date.parse(attachment.expires_at || "");
+    const expired =
+      attachment.deleted_at ||
+      !Number.isFinite(expiresAt) ||
+      expiresAt <= Date.now();
+
+    if (expired) {
+      expiredAttachmentCountByMessage.set(
+        key,
+        (expiredAttachmentCountByMessage.get(key) || 0) + 1
+      );
+      continue;
+    }
+
     if (!attachmentsByMessage.has(key)) attachmentsByMessage.set(key, []);
     attachmentsByMessage.get(key).push({
       id: attachment.id,
@@ -649,7 +743,7 @@ async function getMessagesForChannel(env, channelId, pageNumber = null) {
         id: message.id,
         channel: channelName,
         channelId: message.channel_id,
-        pin: author?.pin,
+        userId: message.user_id,
         author: author?.name,
         role: author?.role,
         text: message.text,
@@ -662,11 +756,17 @@ async function getMessagesForChannel(env, channelId, pageNumber = null) {
             }
           : null,
         files,
+        expiredFileCount: expiredAttachmentCountByMessage.get(String(message.id)) || 0,
         time: message.created_at,
         createdAt: message.created_at,
       };
     })
-    .filter((message) => String(message.text || "") || message.files.length);
+    .filter(
+      (message) =>
+        String(message.text || "") ||
+        message.files.length ||
+        message.expiredFileCount > 0
+    );
 }
 async function createChannel(env, user, name, description) {
   const safeName = String(name || "")
@@ -854,7 +954,8 @@ export default {
           env,
           String(body.pin || ""),
           body.name,
-          Boolean(body.isSuperAdmin)
+          Boolean(body.isSuperAdmin),
+          String(body.superAdminCode || "")
         );
       }
 
@@ -983,7 +1084,7 @@ export default {
         if (!channel) return error("Channel not found.", 404);
 
         const joined = await ensureChannelMember(env, channel.id, user.id);
-        if (joined) await recordActivity(env, user, channel.id, "JOINED");
+        if (joined) await recordActivitySafe(env, user, channel.id, "JOINED");
 
         const pages = await supabaseFetch(env, "channel_pages", {
           query:
@@ -1207,6 +1308,12 @@ export default {
           return error("Forbidden.", 403);
         }
 
+        const channel = await getChannelById(env, id);
+        if (!channel) return error("Channel not found.", 404);
+        if (channel.name === "general") {
+          return error("The general channel cannot be deleted.", 400);
+        }
+
         const channelMessages = await supabaseFetch(env, "messages", {
           query: `?select=id&channel_id=eq.${encodeURIComponent(id)}`,
         });
@@ -1229,12 +1336,20 @@ export default {
         if (!channel) return error("Channel not found.", 404);
         let pages = await getChannelPages(env, channel.id);
         if (!pages.length) {
-          await supabaseFetch(env, "channel_pages", {
-            method: "POST",
-            query: "?select=id,channel_id,page_number,starts_at,created_at",
-            body: { channel_id: channel.id, page_number: 1, starts_at: "1970-01-01T00:00:00Z" },
-            headers: { Prefer: "return=minimal" },
-          });
+          try {
+            await supabaseFetch(env, "channel_pages", {
+              method: "POST",
+              query: "?select=id,channel_id,page_number,starts_at,created_at",
+              body: {
+                channel_id: channel.id,
+                page_number: 1,
+                starts_at: channel.created_at || new Date().toISOString(),
+              },
+              headers: { Prefer: "return=minimal" },
+            });
+          } catch (err) {
+            if (!isUniqueViolation(err)) throw err;
+          }
           pages = await getChannelPages(env, channel.id);
         }
         return response({
@@ -1294,6 +1409,10 @@ export default {
         }
         const page = pages.find((item) => Number(item.page_number) === pageNumber);
         if (!page) return error("Message page not found.", 404);
+        const lastPageNumber = Number(pages[pages.length - 1].page_number);
+        if (pageNumber !== lastPageNumber) {
+          return error("Only the last message page can be deleted.", 400);
+        }
 
         const pageMessages = await supabaseFetch(env, "messages", {
           query:
@@ -1376,7 +1495,7 @@ export default {
         if (!channel) return error("Channel not found.", 404);
 
         const joined = await ensureChannelMember(env, channel.id, user.id);
-        if (joined) await recordActivity(env, user, channel.id, "JOINED");
+        if (joined) await recordActivitySafe(env, user, channel.id, "JOINED");
 
         const requestedPage = Number(body.page);
         const pageNumber = Number.isInteger(requestedPage) && requestedPage > 0
@@ -1388,6 +1507,9 @@ export default {
                 `?select=id,channel_id,page_number&channel_id=eq.${encodeURIComponent(channel.id)}&page_number=eq.${encodeURIComponent(pageNumber)}&limit=1`,
             }))[0]
           : await getLastChannelPage(env, channel.id);
+        if (pageNumber !== null && !page) {
+          return error("Message page not found.", 404);
+        }
         if (!page) {
           page = await createNextChannelPage(env, channel.id);
         }
@@ -1421,7 +1543,7 @@ export default {
         });
 
         const message = Array.isArray(inserted) ? inserted[0] : inserted;
-        await recordActivity(env, user, channel.id, "POSTED");
+        await recordActivitySafe(env, user, channel.id, "POSTED");
 
         let quotedMessage = null;
         if (quotedMessageId) {
@@ -1545,11 +1667,10 @@ export default {
         if (user.role !== "superadmin") return error("Forbidden.", 403);
 
         const body = await request.json().catch(() => ({}));
-        const pin = String(body.pin || "");
-        if (!validPin(pin)) return error("Valid user PIN is required.");
-        if (pin === "4999") return error("The super admin cannot be deleted.", 403);
-
-        const target = await getUserByPin(env, pin, "normal");
+        const id = String(body.id || "").trim();
+        if (!id) return error("User id is required.");
+        const target = await getUserById(env, id);
+        if (!target || target.role === "superadmin") return error("User not found.", 404);
         if (!target) return error("User not found.", 404);
 
         await supabaseFetch(env, "rpc/delete_user_account", {
@@ -1565,18 +1686,15 @@ export default {
         if (user.role !== "superadmin") return error("Forbidden.", 403);
 
         const body = await request.json().catch(() => ({}));
-        const pin = String(body.pin || "");
+        const id = String(body.id || "").trim();
         const role = String(body.role || "");
 
-        if (!validPin(pin)) return error("Valid user PIN is required.");
+        if (!id) return error("User id is required.");
         if (!["user", "admin"].includes(role)) {
           return error("Role must be user or admin.");
         }
-        if (pin === "4999") {
-          return error("The super admin cannot be changed.", 403);
-        }
 
-        const target = await getUserByPin(env, pin, "normal");
+        const target = await getUserById(env, id);
         if (!target) return error("User not found.", 404);
 
         await supabaseFetch(env, "users", {
