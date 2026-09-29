@@ -1,3 +1,7 @@
+/* Never expose the Super Admin key field in ordinary access mode.
+   The field may only appear after the deliberate Super Admin gesture. */
+.auth-overlay:not(.super-mode) #superAdminKeyInput{display:none!important}
+
 /* Access interaction fixes: the PIN remains a real usable input, with no visible field, caret, or password dots. */
 .hud-pin-input{position:relative!important;left:auto!important;top:auto!important;transform:none!important;display:block!important;width:220px!important;height:24px!important;margin:10px 0 0!important;padding:0!important;opacity:1!important;pointer-events:auto!important;z-index:30!important;border:0!important;border-radius:0!important;background:transparent!important;color:transparent!important;caret-color:transparent!important;outline:none!important;text-align:center!important;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace!important;font-size:.9rem!important;letter-spacing:0!important;box-shadow:none!important;text-shadow:none!important}
 .hud-pin-input::placeholder{color:transparent!important;letter-spacing:0!important}.hud-pin-input:focus{border:0!important;outline:none!important;box-shadow:none!important;caret-color:transparent!important}.hud-pin-input::-moz-selection{background:transparent!important;color:transparent!important}.hud-pin-input::selection{background:transparent!important;color:transparent!important}
