@@ -45,7 +45,7 @@ Feel free to check [our documentation](https://docs.astro.build) or jump into ou
 
 ## Worker secrets
 
-The Super Admin flow requires a server-only Worker secret named `CONVO_SUPERADMIN_KEY`. Store it as a Cloudflare Worker secret; never put the value in the repository or frontend code. Super Admin login uses the fixed PIN `4999` plus this server-side key, then receives a signed 12-hour session used for protected admin API calls.
+No frontend secret is required for normal Convo login. Super Admin uses the dedicated hidden Super Admin gesture, fixed PIN `4999`, and then receives a signed 12-hour session for protected admin API calls.
 
 ## Private channels
 
