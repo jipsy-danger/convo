@@ -1569,7 +1569,7 @@ export default {
             channel: channel.name,
             channelId: message.channel_id,
             page: page.page_number,
-            pin: user.pin,
+            userId: user.id,
             author: user.name,
             role: user.role,
             text: message.text,
