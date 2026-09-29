@@ -1372,7 +1372,7 @@ export default {
 
         const currentRows = await supabaseFetch(env, "channels", {
           query:
-            `?select=id,name,description,created_by,created_at&id=eq.${encodeURIComponent(id)}&limit=1`,
+            `?select=id,name,description,created_by,created_at,is_private&id=eq.${encodeURIComponent(id)}&limit=1`,
         });
         const channel = Array.isArray(currentRows) ? currentRows[0] : null;
         if (!channel) return error("Channel not found.", 404);
@@ -1408,7 +1408,7 @@ export default {
           updated = await supabaseFetch(env, "channels", {
             method: "PATCH",
             query:
-              `?id=eq.${encodeURIComponent(id)}&select=id,name,description,created_by,created_at`,
+              `?id=eq.${encodeURIComponent(id)}&select=id,name,description,created_by,created_at,is_private`,
             body: { name },
             headers: { Prefer: "return=representation" },
           });
