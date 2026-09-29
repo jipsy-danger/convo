@@ -21,7 +21,11 @@ function applyPinValue(raw){
   pinInput.value=value;
   if(superAdminMode&&superAdminKeyInput){
     superAdminKeyInput.hidden=value.length<4;
-    if(value.length<4)superAdminKeyInput.value='';
+    if(value.length<4){
+      superAdminKeyInput.value='';
+    }else{
+      requestAnimationFrame(()=>superAdminKeyInput.focus({preventScroll:true}));
+    }
   }
   if(value!==hiddenPin){
     hiddenPin=value;
@@ -51,6 +55,12 @@ accessCore.addEventListener('pointerdown',beginSuperAdminHold,{passive:false});[
 function confirmSuperAdminJ(){if(!superAdminJArmed||superAdminMode)return;superAdminMode=true;superAdminJArmed=false;pinInput.type='password';pinInput.inputMode='numeric';pinInput.value='';hiddenPin='';if(superAdminKeyInput)superAdminKeyInput.hidden=true;hudStatus.textContent='ACCESS CORE READY';hudHint.textContent='ENTER 4-DIGIT PIN';bumpCore('admin-bump');focusAccess()}
 window.addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();hiddenPin='';pinInput.value='';pinInput.type='password';pinInput.inputMode='numeric';autoSubmitting=false;resetSuperAdminArming();authOverlay.classList.remove('super-mode','denied');hudStatus.textContent='ACCESS SYSTEM READY';hudHint.textContent='ENTER ACCESS CODE';updateHud();closeSuperAdminPanel();focusAccess();return}if(superAdminJArmed&&!superAdminMode&&(e.key==='j'||e.key==='J')){e.preventDefault();confirmSuperAdminJ()}});
 pinInput.addEventListener('input',e=>applyPinValue(e.target.value));
+superAdminKeyInput?.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){
+    e.preventDefault();
+    authForm.requestSubmit();
+  }
+});
 window.addEventListener('keydown',e=>{
   if(!authOverlayVisible())return;
   if(e.code==='Escape')return;
