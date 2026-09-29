@@ -495,6 +495,14 @@ async function recordActivity(env, user, channelId, action) {
   await touchUserActivity(env, user.id);
 }
 
+async function recordActivitySafe(env, user, channelId, action) {
+  try {
+    await recordActivity(env, user, channelId, action);
+  } catch (err) {
+    console.warn("Non-critical activity logging failed.", err);
+  }
+}
+
 async function getChannelPages(env, channelId) {
   return await supabaseFetch(env, "channel_pages", {
     query:
@@ -697,7 +705,7 @@ async function createChannel(env, user, name, description) {
 
   const channel = Array.isArray(inserted) ? inserted[0] : inserted;
   const joined = await ensureChannelMember(env, channel.id, user.id);
-  if (joined) await recordActivity(env, user, channel.id, "JOINED");
+  if (joined) await recordActivitySafe(env, user, channel.id, "JOINED");
 
   return channel;
 }
@@ -917,7 +925,7 @@ export default {
 
         const rows = await supabaseFetch(env, "message_attachments", {
           query:
-            `?select=id,expires_at,deleted_at&id=eq.${encodeURIComponent(
+            `?select=id,message_id,bucket,object_path,file_name,mime_type,file_size,expires_at,deleted_at&id=eq.${encodeURIComponent(
               attachmentId
             )}&limit=1`,
         });
@@ -930,6 +938,19 @@ export default {
         ) {
           return error("This file share has expired.", 410);
         }
+
+        const messageRows = await supabaseFetch(env, "messages", {
+          query:
+            `?select=id,channel_id,user_id&page_id=is.null&id=eq.${encodeURIComponent(
+              attachment.message_id
+            )}&limit=1`.replace("&page_id=is.null", "")
+        });
+        const message = Array.isArray(messageRows) && messageRows.length ? messageRows[0] : null;
+        if (!message) return error("File message not found.", 404);
+
+        const channel = await getChannelByName(env, message.channel_id);
+        if (!channel) return error("File channel not found.", 404);
+        await ensureChannelMember(env, channel.id, user.id);
 
         const token = await createDownloadToken(env, attachment.id);
         return response({
@@ -1054,7 +1075,7 @@ export default {
           throw err;
         }
 
-        await recordActivity(env, user, channel.id, "POSTED");
+        await recordActivitySafe(env, user, channel.id, "POSTED");
 
         return response({
           ok: true,
@@ -1478,7 +1499,7 @@ export default {
           headers: { Prefer: "return=minimal" },
         });
 
-        await recordActivity(env, user, message.channel_id, "POSTED");
+        await recordActivitySafe(env, user, message.channel_id, "POSTED");
         return response({ ok: true });
       }
 
