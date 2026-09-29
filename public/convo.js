@@ -59,6 +59,7 @@ window.addEventListener('keydown',e=>{
     else if(e.key.length===1){e.preventDefault();}
     return;
   }
+  if(document.activeElement===superAdminKeyInput||document.activeElement===nameInput)return;
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   if(e.key==='Enter'){
     if(hiddenPin.length===4&&!superAdminMode){e.preventDefault();authForm.requestSubmit();}if(superAdminMode&&hiddenPin.length===4&&superAdminKeyInput?.value.trim()){e.preventDefault();authForm.requestSubmit();}
