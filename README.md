@@ -41,3 +41,8 @@ All commands are run from the root of the project, from a terminal:
 ## 👀 Want to learn more?
 
 Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+
+
+## Worker secrets
+
+The Super Admin flow requires a server-only Worker secret named `CONVO_SUPERADMIN_KEY`. Store it as a Cloudflare Worker secret; never put the value in the repository or frontend code. Super Admin login uses the fixed PIN `4999` plus this server-side key, then receives a signed 12-hour session used for protected admin API calls.
