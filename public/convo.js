@@ -727,6 +727,21 @@ if(currentUser?.role==='superadmin'&&!superAdminSession){
   try{localStorage.removeItem('convo_active_pin');localStorage.removeItem('convo_user');localStorage.removeItem('convo_superadmin_session')}catch(e){}
   currentPin=null;currentUser=null;hiddenPin='';pinInput.value='';resetSuperAdminArming();authOverlay.classList.remove('denied','checking','granted');hudStatus.textContent='ACCESS SYSTEM READY';hudHint.textContent='ENTER ACCESS CODE';updateHud();
 }
+window.addEventListener('pageshow',()=>{
+  if(authOverlayVisible()&&!currentUser){
+    resetSuperAdminArming();
+    hiddenPin='';
+    pinInput.value='';
+    pinInput.type='password';
+    pinInput.inputMode='numeric';
+    if(superAdminKeyInput){superAdminKeyInput.value='';superAdminKeyInput.hidden=true}
+    authOverlay.classList.remove('super-mode','denied','checking','granted');
+    hudStatus.textContent='ACCESS SYSTEM READY';
+    hudHint.textContent='ENTER ACCESS CODE';
+    updateHud();
+    requestAnimationFrame(focusAccess);
+  }
+});
 window.convoApi=api;
 window.convoLoadChannels=loadChannels;
 window.convoGetState=()=>({currentUser,activeChannel,currentChannels,lastPage,activePage});
