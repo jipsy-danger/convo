@@ -110,7 +110,7 @@ async function login(){
 }
 window.login=login;
 async function loadChannels(preferredName=null,select=true){if(!currentChannels.length){const cached=readCachedChannels();if(cached.length){currentChannels=cached;renderChannels()}}let networkError=null;try{const d=await api('/channels',{timeoutMs:10000});if(Array.isArray(d.channels)&&d.channels.length){currentChannels=d.channels;writeCachedChannels(currentChannels);renderChannels()}}catch(err){networkError=err;console.warn('Channel sync failed; using cached channels when available.',err)}const targetName=preferredName||activeChannel?.name||'general',target=currentChannels.find(c=>c.name===targetName)||currentChannels[0];if(select&&target)await selectChannel(target.name,false);if(networkError&&!target)throw networkError;return target}
-function renderChannels(){const list=$('channelNavList');list.replaceChildren();const canManageChannel=['admin','superadmin'].includes(currentUser?.role);currentChannels.forEach(channel=>{const row=document.createElement('div');row.className='channel-item-row';const b=document.createElement('button');b.type='button';b.className='channel-item'+(activeChannel?.id===channel.id?' active':'');b.textContent=`# ${channel.name}`;b.title=channel.description||channel.name;b.addEventListener('click',()=>selectChannel(channel.name));row.appendChild(b);if(canManageChannel&&channel.name!=='general'){const del=document.createElement('button');del.type='button';del.className='channel-delete';del.setAttribute('aria-label',`Delete #${channel.name}`);del.title=`Delete #${channel.name}`;del.textContent='×';del.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();activeChannel?.id===channel.id?window.deleteCurrentGroup():deleteChannelById(channel.id)});row.appendChild(del)}list.appendChild(row)})}
+function renderChannels(){const list=$('channelNavList');list.replaceChildren();const canManageChannel=currentUser?.role==='superadmin'||currentUser?.role==='admin';currentChannels.forEach(channel=>{const row=document.createElement('div');row.className='channel-item-row';const b=document.createElement('button');b.type='button';b.className='channel-item'+(activeChannel?.id===channel.id?' active':'');b.textContent=(channel.isPrivate?'🔒 ':'# ')+channel.name;b.title=channel.description||channel.name;b.addEventListener('click',()=>selectChannel(channel.name));row.appendChild(b);if(((currentUser?.role==='superadmin')||(currentUser?.role==='admin'&&!channel.isPrivate))&&channel.name!=='general'){const del=document.createElement('button');del.type='button';del.className='channel-delete';del.setAttribute('aria-label',`Delete #${channel.name}`);del.title=`Delete #${channel.name}`;del.textContent='×';del.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();activeChannel?.id===channel.id?window.deleteCurrentGroup():deleteChannelById(channel.id)});row.appendChild(del)}list.appendChild(row)})}
 function getMessageSignature(messages){return JSON.stringify(messages.map(m=>[m.id,m.channelId,m.userId,m.author,m.role,m.text,m.quotedMessage?.id,m.expiredFileCount,m.time||m.createdAt]));}
 function pageStorageKey(channel){return `convo_active_page_${channel?.id||channel?.name||'general'}`;}
 function renderPageMenu(){
@@ -307,11 +307,13 @@ async function selectChannel(channelName,reportActivity=true){
   clearReplyTarget();
   $('activeChannelHeading').textContent=`# ${channel.name}`;
   $('activeChannelDesc').textContent=channel.description||'Project discussion';
-  const canManageChannel=['admin','superadmin'].includes(currentUser?.role);
+  const canManageChannel=currentUser?.role==='superadmin'||(currentUser?.role==='admin'&&!channel.isPrivate);
   if(btnRenameChannel){
     btnRenameChannel.hidden=!canManageChannel||channel.name==='general';
   }
   $('btnDeleteGroup').style.display=channel.name==='general'||!canManageChannel?'none':'inline-flex';
+  $('activeChannelHeading').textContent=(channel.isPrivate?'🔒 ':'# ')+channel.name;
+  window.privateChannelSyncControls?.(channel);
   renderChannels();
   $('messagesFeed').innerHTML='<div class="state-message">Loading messages...</div>';
   try{
@@ -656,7 +658,7 @@ msgInput?.addEventListener('input',()=>{
 });
 
 const channelModal=$('channelModal'),channelForm=$('channelForm'),channelNameInput=$('channelNameInput'),channelDescriptionInput=$('channelDescriptionInput'),channelModalError=$('channelModalError'),btnSubmitChannel=$('btnSubmitChannel');
-function closeChannelModal(){channelModal.hidden=true;channelForm.reset();channelModalError.textContent='';btnSubmitChannel.disabled=false;btnSubmitChannel.textContent='Create'}
+function closeChannelModal(){channelModal.hidden=true;channelForm.reset();channelModalError.textContent='';btnSubmitChannel.disabled=false;btnSubmitChannel.textContent='Create';window.privateChannelResetCreate?.()}
 function closeRenameChannelModal(){
   if(!renameChannelModal)return;
   renameChannelModal.hidden=true;
@@ -668,7 +670,7 @@ function closeRenameChannelModal(){
   }
 }
 function openRenameChannelModal(){
-  if(!activeChannel||!['admin','superadmin'].includes(currentUser?.role)||activeChannel.name==='general')return;
+  if(!activeChannel||(activeChannel.isPrivate?currentUser?.role!=='superadmin':!['admin','superadmin'].includes(currentUser?.role))||activeChannel.name==='general')return;
   renameChannelModal.hidden=false;
   renameChannelModal.removeAttribute('hidden');
   renameChannelError.textContent='';
@@ -680,7 +682,7 @@ btnCancelRenameChannel?.addEventListener('click',closeRenameChannelModal);
 document.querySelector('[data-close-rename-channel]')?.addEventListener('click',closeRenameChannelModal);
 renameChannelForm?.addEventListener('submit',async e=>{
   e.preventDefault();
-  if(!activeChannel||!['admin','superadmin'].includes(currentUser?.role)||activeChannel.name==='general')return;
+  if(!activeChannel||(activeChannel.isPrivate?currentUser?.role!=='superadmin':!['admin','superadmin'].includes(currentUser?.role))||activeChannel.name==='general')return;
   const name=renameChannelInput.value.trim();
   if(!name){
     renameChannelError.textContent='Channel name is required.';
@@ -708,13 +710,14 @@ function openChannelModal(){
   channelModal.hidden=false;
   channelModal.removeAttribute('hidden');
   channelModalError.textContent='';
+  window.privateChannelPrepareCreate?.();
   requestAnimationFrame(()=>channelNameInput.focus());
 }
 window.createCustomGroup=openChannelModal;
 $('btnCreateChannel')?.addEventListener('click',e=>{e.preventDefault();openChannelModal()});
 channelForm.addEventListener('submit',async e=>{e.preventDefault();if(!currentUser)return;const name=channelNameInput.value.trim(),description=channelDescriptionInput.value.trim()||'Project discussion';if(!name){channelModalError.textContent='Channel name is required.';channelNameInput.focus();return}btnSubmitChannel.disabled=true;btnSubmitChannel.textContent='Creating...';channelModalError.textContent='';try{const d=await api('/channels',{method:'POST',body:JSON.stringify({name,description})});closeChannelModal();await loadChannels(d.channel?.name||name.trim().toLowerCase())}catch(err){channelModalError.textContent=err.message||'Unable to create channel.';btnSubmitChannel.disabled=false;btnSubmitChannel.textContent='Create'}});$('btnCancelChannel').addEventListener('click',closeChannelModal);document.querySelector('[data-close-channel-modal]').addEventListener('click',closeChannelModal);
-async function deleteChannelById(channelId){const channel=currentChannels.find(c=>c.id===channelId);if(!channel||channel.name==='general'||!['admin','superadmin'].includes(currentUser?.role))return;if(!confirm(`Delete #${channel.name} and its messages?`))return;try{await api('/channels/delete',{method:'POST',body:JSON.stringify({id:channel.id})});if(activeChannel?.id===channel.id)activeChannel=null;await loadChannels(activeChannel?.name||'general')}catch(err){alert(err.message||'Unable to delete channel.')}};
-window.deleteCurrentGroup=async function(){if(!activeChannel||activeChannel.name==='general'||!['admin','superadmin'].includes(currentUser?.role))return;await deleteChannelById(activeChannel.id)};
+async function deleteChannelById(channelId){const channel=currentChannels.find(c=>c.id===channelId);if(!channel||channel.name==='general')return;if(channel.isPrivate?currentUser?.role!=='superadmin':!['admin','superadmin'].includes(currentUser?.role))return;if(!confirm(`Delete #${channel.name} and its messages?`))return;try{await api('/channels/delete',{method:'POST',body:JSON.stringify({id:channel.id})});if(activeChannel?.id===channel.id)activeChannel=null;await loadChannels(activeChannel?.name||'general')}catch(err){alert(err.message||'Unable to delete channel.')}};
+window.deleteCurrentGroup=async function(){if(!activeChannel||activeChannel.name==='general')return;if(activeChannel.isPrivate?currentUser?.role!=='superadmin':!['admin','superadmin'].includes(currentUser?.role))return;await deleteChannelById(activeChannel.id)};
 async function loadAdminUsers(){if(currentUser?.role!=='superadmin')return;const rows=$('adminUserRows');rows.innerHTML='<div class="state-message">Loading authority data...</div>';try{const d=await api('/users'),users=Array.isArray(d.users)?d.users:[];rows.replaceChildren();users.forEach(user=>{const row=document.createElement('div');row.className='admin-user-row';row.innerHTML=`<span class="admin-user-main"><strong>${esc(user.name)}</strong><small>PIN ${esc(user.pin)}</small></span><span class="admin-user-role">${esc(user.role)}</span>${user.pin!==currentUser.pin?`<button type="button" class="btn-ctrl" data-user-id="${esc(user.id)}" data-role="${esc(user.role==='admin'?'user':'admin')}">${user.role==='admin'?'Make User':'Make Admin'}</button>`:''}`;const action=row.querySelector('button');if(action)action.addEventListener('click',()=>changeUserRole(action.dataset.userId,action.dataset.role));rows.appendChild(row)})}catch(err){rows.innerHTML='<div class="state-message">Authority data unavailable.</div>';showAppError(err)}}
 async function changeUserRole(id,role){try{await api('/users/role',{method:'PUT',body:JSON.stringify({id,role})});await loadAdminUsers();await loadAdminAnalytics()}catch(err){alert(err.message||'Unable to change user role.')}}
 async function loadAdminAnalytics(){if(currentUser?.role!=='superadmin')return;try{const d=await api('/analytics'),s=d.stats||{};$('superAdminStats').innerHTML=`<div><b>${Number(s.totalUsers||0)}</b><span>Users</span></div><div><b>${Number(s.totalAdmins||0)}</b><span>Admins</span></div><div><b>${Number(s.totalMessages||0)}</b><span>Messages</span></div><div><b>${Number(s.activeUsers||0)}</b><span>Active</span></div>`;$('superAdminActivity').innerHTML=`<div><span>Channels</span><b>${Number(s.totalChannels||0)}</b></div><div><span>Active channels</span><b>${Number(s.activeChannels||0)}</b></div><div><span>Views</span><b>${Number(s.totalViews||0)}</b></div><div><span>Generated</span><b>${esc(formatTime(d.generatedAt))}</b></div>`}catch(err){$('superAdminActivity').textContent='Analytics unavailable.';console.error(err)}}
@@ -727,4 +730,9 @@ if(currentUser?.role==='superadmin'&&!superAdminSession){
   try{localStorage.removeItem('convo_active_pin');localStorage.removeItem('convo_user');localStorage.removeItem('convo_superadmin_session')}catch(e){}
   currentPin=null;currentUser=null;
 }
+window.convoApi=api;
+window.convoLoadChannels=loadChannels;
+window.convoGetState=()=>({currentUser,activeChannel,currentChannels,lastPage,activePage});
+window.convoCloseChannelModal=closeChannelModal;
+
 if(currentPin&&currentUser){authOverlay.style.display='none';initApp()}else{authOverlay.style.display='flex';requestAnimationFrame(focusAccess)}
