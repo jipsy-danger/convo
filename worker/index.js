@@ -375,7 +375,7 @@ function isUniqueViolation(err) {
 
 async function getBootstrapChannels(env) {
   try {
-    let channels = await supabaseGetAll(env, "channels", "id,name,description,created_by,created_at");
+    let channels = await supabaseGetAll(env, "channels", "id,name,description,created_by,created_at,is_private");
     if (!channels.length) channels = [await ensureGeneralChannel(env)];
     return channels.map((channel) => ({
       id: channel.id,
@@ -383,6 +383,7 @@ async function getBootstrapChannels(env) {
       description: channel.description,
       createdBy: channel.created_by,
       createdAt: channel.created_at,
+      isPrivate: Boolean(channel.is_private),
     }));
   } catch (err) {
     console.warn("Bootstrap channel load failed.", err);
@@ -489,7 +490,7 @@ async function requireUser(env, request) {
 async function getChannelById(env, id) {
   const channels = await supabaseFetch(env, "channels", {
     query:
-      `?select=id,name,description,created_by,created_at&id=eq.${encodeURIComponent(id)}&limit=1`,
+      `?select=id,name,description,created_by,created_at,is_private&id=eq.${encodeURIComponent(id)}&limit=1`,
   });
   return Array.isArray(channels) && channels.length ? channels[0] : null;
 }
@@ -497,7 +498,7 @@ async function getChannelById(env, id) {
 async function getChannelByName(env, name) {
   const channels = await supabaseFetch(env, "channels", {
     query:
-      `?select=id,name,description,created_by,created_at` +
+      `?select=id,name,description,created_by,created_at,is_private` +
       `&name=eq.${encodeURIComponent(name)}&limit=1`,
   });
   return Array.isArray(channels) && channels.length ? channels[0] : null;
@@ -521,16 +522,43 @@ async function ensureGeneralChannel(env) {
   return Array.isArray(inserted) ? inserted[0] : inserted;
 }
 
+async function requireChannelAccess(env, user, channel) {
+  if (!channel) {
+    throw Object.assign(new Error("Channel not found."), { status: 404 });
+  }
+  if (!channel.is_private || user?.role === "superadmin") return;
+
+  const members = await supabaseFetch(env, "channel_members", {
+    query:
+      `?select=channel_id,user_id&channel_id=eq.${encodeURIComponent(channel.id)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`,
+  });
+  if (!Array.isArray(members) || !members.length) {
+    throw Object.assign(new Error("You are not a member of this private channel."), {
+      status: 403,
+    });
+  }
+}
+
 /* Returns true only when this request creates the membership. */
 async function ensureChannelMember(env, channelId, userId) {
+  const channel = await getChannelById(env, channelId);
+  await requireChannelAccess(env, {
+    id: userId,
+    role: channel?.is_private ? undefined : "user",
+  }, channel);
+
   const existing = await supabaseFetch(env, "channel_members", {
     query:
-      `?select=channel_id,user_id` +
-      `&channel_id=eq.${encodeURIComponent(channelId)}` +
-      `&user_id=eq.${encodeURIComponent(userId)}&limit=1`,
+      `?select=channel_id,user_id&channel_id=eq.${encodeURIComponent(channelId)}&user_id=eq.${encodeURIComponent(userId)}&limit=1`,
   });
 
   if (Array.isArray(existing) && existing.length) return false;
+
+  if (channel?.is_private) {
+    throw Object.assign(new Error("You are not a member of this private channel."), {
+      status: 403,
+    });
+  }
 
   await supabaseFetch(env, "channel_members", {
     method: "POST",
@@ -542,7 +570,6 @@ async function ensureChannelMember(env, channelId, userId) {
 
   return true;
 }
-
 async function updateChannelViewed(env, channelId, userId) {
   await supabaseFetch(env, "channel_members", {
     method: "PATCH",
@@ -767,7 +794,15 @@ async function getMessagesForChannel(env, channelId, pageNumber = null) {
         message.expiredFileCount > 0
     );
 }
-async function createChannel(env, user, name, description) {
+async function createChannel(env, user, name, description, isPrivate = false, memberIds = []) {
+  const privateChannel = Boolean(isPrivate);
+  if (privateChannel && user.role !== "superadmin") {
+    throw Object.assign(
+      new Error("Only the Super Admin can create private channels."),
+      { status: 403 }
+    );
+  }
+
   const safeName = String(name || "")
     .trim()
     .toLowerCase()
@@ -783,15 +818,51 @@ async function createChannel(env, user, name, description) {
     throw Object.assign(new Error("Channel already exists."), { status: 409 });
   }
 
+  const requestedMemberIds = [...new Set(
+    (Array.isArray(memberIds) ? memberIds : [])
+      .map((id) => String(id).trim())
+      .filter(Boolean)
+  )];
+
+  let selectedMembers = [];
+  if (privateChannel) {
+    if (!requestedMemberIds.length) {
+      throw Object.assign(
+        new Error("Select at least one user for the private channel."),
+        { status: 400 }
+      );
+    }
+
+    selectedMembers = await supabaseGetAll(
+      env,
+      "users",
+      "id,name,role"
+    );
+    const memberMap = new Map(
+      selectedMembers.map((member) => [String(member.id), member])
+    );
+    const invalid = requestedMemberIds.find((id) => {
+      const member = memberMap.get(id);
+      return !member || member.role === "superadmin";
+    });
+    if (invalid) {
+      throw Object.assign(new Error("Private channel members must be existing non-Super Admin users."), {
+        status: 400,
+      });
+    }
+    selectedMembers = requestedMemberIds.map((id) => memberMap.get(id));
+  }
+
   let inserted;
   try {
     inserted = await supabaseFetch(env, "channels", {
       method: "POST",
-      query: "?select=id,name,description,created_by,created_at",
+      query: "?select=id,name,description,created_by,created_at,is_private",
       body: {
         name: safeName,
         description: cleanName(description) || "Project discussion",
         created_by: user.id,
+        is_private: privateChannel,
       },
       headers: { Prefer: "return=representation" },
     });
@@ -803,12 +874,35 @@ async function createChannel(env, user, name, description) {
   }
 
   const channel = Array.isArray(inserted) ? inserted[0] : inserted;
-  const joined = await ensureChannelMember(env, channel.id, user.id);
-  if (joined) await recordActivitySafe(env, user, channel.id, "JOINED");
+
+  try {
+    if (privateChannel) {
+      for (const member of selectedMembers) {
+        await supabaseFetch(env, "channel_members", {
+          method: "POST",
+          body: { channel_id: channel.id, user_id: member.id },
+          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        });
+      }
+    } else {
+      const joined = await ensureChannelMember(env, channel.id, user.id);
+      if (joined) await recordActivitySafe(env, user, channel.id, "JOINED");
+    }
+  } catch (err) {
+    try {
+      await supabaseFetch(env, "channels", {
+        method: "DELETE",
+        query: `?id=eq.${encodeURIComponent(channel.id)}`,
+        headers: { Prefer: "return=minimal" },
+      });
+    } catch (cleanupErr) {
+      console.warn("Channel creation rollback failed.", cleanupErr);
+    }
+    throw err;
+  }
 
   return channel;
 }
-
 function canDeleteMessage(user, message) {
   return (
     user.role === "superadmin" ||
@@ -820,7 +914,7 @@ function canDeleteMessage(user, message) {
 async function getAnalytics(env) {
   const [users, channels, messages, members, activities] = await Promise.all([
     supabaseGetAll(env, "users", "id,pin,name,role,created_at,last_activity_at"),
-    supabaseGetAll(env, "channels", "id,name,description,created_by,created_at"),
+    supabaseGetAll(env, "channels", "id,name,description,created_by,created_at,is_private"),
     supabaseGetAll(env, "messages", "id,channel_id,user_id,text,created_at"),
     supabaseGetAll(env, "channel_members", "channel_id,user_id,joined_at,last_viewed_at"),
     supabaseGetAll(env, "channel_activity", "id,user_id,channel_id,action,created_at"),
@@ -1081,6 +1175,7 @@ export default {
 
         const channel = await getChannelByName(env, channelName);
         if (!channel) return error("Channel not found.", 404);
+        await requireChannelAccess(env, user, channel);
 
         const joined = await ensureChannelMember(env, channel.id, user.id);
         if (joined) await recordActivitySafe(env, user, channel.id, "JOINED");
@@ -1193,10 +1288,23 @@ export default {
         let channels = await supabaseGetAll(
           env,
           "channels",
-          "id,name,description,created_by,created_at"
+          "id,name,description,created_by,created_at,is_private"
         );
 
         if (!channels.length) channels = [await ensureGeneralChannel(env)];
+
+        if (user.role !== "superadmin") {
+          const memberships = await supabaseFetch(env, "channel_members", {
+            query:
+              `?select=channel_id&user_id=eq.${encodeURIComponent(user.id)}&limit=1000`,
+          });
+          const memberChannelIds = new Set(
+            (Array.isArray(memberships) ? memberships : []).map((row) => String(row.channel_id))
+          );
+          channels = channels.filter(
+            (channel) => !channel.is_private || memberChannelIds.has(String(channel.id))
+          );
+        }
 
         return response({
           ok: true,
@@ -1206,13 +1314,21 @@ export default {
             description: channel.description,
             createdBy: channel.created_by,
             createdAt: channel.created_at,
+            isPrivate: Boolean(channel.is_private),
           })),
         });
       }
 
       if (path === "/channels" && request.method === "POST") {
         const body = await request.json().catch(() => ({}));
-        const channel = await createChannel(env, user, body.name, body.description);
+        const channel = await createChannel(
+          env,
+          user,
+          body.name,
+          body.description,
+          Boolean(body.isPrivate),
+          body.memberIds
+        );
 
         return response({
           ok: true,
@@ -1222,6 +1338,7 @@ export default {
             description: channel.description,
             createdBy: channel.created_by,
             createdAt: channel.created_at,
+            isPrivate: Boolean(channel.is_private),
           },
         });
       }
@@ -1240,6 +1357,9 @@ export default {
         });
         const channel = Array.isArray(currentRows) ? currentRows[0] : null;
         if (!channel) return error("Channel not found.", 404);
+        if (channel.is_private && user.role !== "superadmin") {
+          return error("Only the Super Admin can manage private channels.", 403);
+        }
         if (channel.name === "general") {
           return error("The general channel cannot be renamed.", 400);
         }
@@ -1287,6 +1407,7 @@ export default {
             description: saved.description,
             createdBy: saved.created_by,
             createdAt: saved.created_at,
+            isPrivate: Boolean(saved.is_private),
           },
         });
       }
@@ -1309,6 +1430,9 @@ export default {
 
         const channel = await getChannelById(env, id);
         if (!channel) return error("Channel not found.", 404);
+        if (channel.is_private && user.role !== "superadmin") {
+          return error("Only the Super Admin can manage private channels.", 403);
+        }
         if (channel.name === "general") {
           return error("The general channel cannot be deleted.", 400);
         }
@@ -1329,10 +1453,94 @@ export default {
         return response({ ok: true });
       }
 
+      if (path === "/channels/members" && request.method === "GET") {
+        if (user.role !== "superadmin") return error("Forbidden.", 403);
+        const channelId = String(url.searchParams.get("channel") || "").trim();
+        if (!channelId) return error("Channel id is required.");
+        const channel = await getChannelById(env, channelId);
+        if (!channel) return error("Channel not found.", 404);
+        if (!channel.is_private) return error("This is not a private channel.", 400);
+
+        const memberships = await supabaseFetch(env, "channel_members", {
+          query:
+            `?select=user_id&channel_id=eq.${encodeURIComponent(channelId)}&limit=1000`,
+        });
+        const memberIds = new Set(
+          (Array.isArray(memberships) ? memberships : []).map((row) => String(row.user_id))
+        );
+        const users = await supabaseGetAll(env, "users", "id,name,role");
+        return response({
+          ok: true,
+          users: users
+            .filter((candidate) => candidate.role !== "superadmin")
+            .map((candidate) => ({
+              id: candidate.id,
+              name: candidate.name,
+              role: candidate.role,
+              selected: memberIds.has(String(candidate.id)),
+            })),
+        });
+      }
+
+      if (path === "/channels/members" && request.method === "POST") {
+        if (user.role !== "superadmin") return error("Forbidden.", 403);
+        const body = await request.json().catch(() => ({}));
+        const channelId = String(body.channelId || "").trim();
+        if (!channelId) return error("Channel id is required.");
+        const channel = await getChannelById(env, channelId);
+        if (!channel) return error("Channel not found.", 404);
+        if (!channel.is_private) return error("This is not a private channel.", 400);
+
+        const requested = [...new Set(
+          (Array.isArray(body.memberIds) ? body.memberIds : [])
+            .map((id) => String(id).trim())
+            .filter(Boolean)
+        )];
+        if (!requested.length) return error("Select at least one user.");
+
+        const users = await supabaseGetAll(env, "users", "id,name,role");
+        const userMap = new Map(users.map((candidate) => [String(candidate.id), candidate]));
+        if (requested.some((id) => !userMap.has(id) || userMap.get(id).role === "superadmin")) {
+          return error("Private channel members must be existing non-Super Admin users.");
+        }
+
+        const existing = await supabaseFetch(env, "channel_members", {
+          query:
+            `?select=user_id&channel_id=eq.${encodeURIComponent(channelId)}&limit=1000`,
+        });
+        const existingIds = new Set(
+          (Array.isArray(existing) ? existing : []).map((row) => String(row.user_id))
+        );
+        const desired = new Set(requested);
+
+        for (const id of existingIds) {
+          if (!desired.has(id)) {
+            await supabaseFetch(env, "channel_members", {
+              method: "DELETE",
+              query:
+                `?channel_id=eq.${encodeURIComponent(channelId)}&user_id=eq.${encodeURIComponent(id)}`,
+              headers: { Prefer: "return=minimal" },
+            });
+          }
+        }
+        for (const id of desired) {
+          if (!existingIds.has(id)) {
+            await supabaseFetch(env, "channel_members", {
+              method: "POST",
+              body: { channel_id: channelId, user_id: id },
+              headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+            });
+          }
+        }
+
+        return response({ ok: true, memberIds: [...desired].map(Number).filter(Number.isFinite) });
+      }
+
       if (path === "/pages" && request.method === "GET") {
         const channelName = url.searchParams.get("channel") || "general";
         const channel = await getChannelByName(env, channelName);
         if (!channel) return error("Channel not found.", 404);
+        await requireChannelAccess(env, user, channel);
         let pages = await getChannelPages(env, channel.id);
         if (!pages.length) {
           try {
@@ -1367,6 +1575,7 @@ export default {
         if (!channelName) return error("Channel is required.");
         const channel = await getChannelByName(env, channelName);
         if (!channel) return error("Channel not found.", 404);
+        await requireChannelAccess(env, user, channel);
         const page = await createNextChannelPage(env, channel.id);
         return response({
           ok: true,
@@ -1396,6 +1605,7 @@ export default {
         }
         const channel = await getChannelByName(env, channelName);
         if (!channel) return error("Channel not found.", 404);
+        await requireChannelAccess(env, user, channel);
         const pages = await supabaseFetch(env, "channel_pages", {
           query:
             `?select=id,channel_id,page_number&channel_id=eq.${encodeURIComponent(channel.id)}&order=page_number.asc`,
@@ -1443,6 +1653,7 @@ export default {
         }
 
         if (!channel) return response({ ok: true, messages: [] });
+        await requireChannelAccess(env, user, channel);
 
         /*
          * A sync read is intentionally read-only.
@@ -1640,6 +1851,7 @@ export default {
           );
           if (!channel) return error("Channel not found.", 404);
           channelId = channel.id;
+          await requireChannelAccess(env, user, channel);
 
           if (action === "VIEWED") {
             await ensureChannelMember(env, channelId, user.id);
