@@ -1,3 +1,4 @@
+// Deployment marker: keep Worker and Pages releases aligned.
 const JSON_HEADERS = {
   "Content-Type": "application/json; charset=utf-8",
   "Cache-Control": "no-store",
