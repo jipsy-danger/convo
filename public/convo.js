@@ -278,17 +278,43 @@ async function selectMessagePage(page){
 }
 async function nextMessagePage(){
   if(!activeChannel)return;
-  if(activePage<lastPage){await selectMessagePage(activePage+1);return}
+
+  // Refresh the page list before deciding whether the arrow should navigate
+  // or create a new page. This prevents stale client state from treating an
+  // existing page as missing.
+  try{
+    await loadChannelPages(activeChannel);
+  }catch(err){
+    alert(err.message||'Unable to load message pages.');
+    return;
+  }
+
+  if(activePage<lastPage){
+    await selectMessagePage(activePage+1);
+    return;
+  }
+
+  // The current last page is already open. Only create another page after it
+  // contains a message; the Worker enforces the same rule server-side.
+  if(lastMessageSignature==='[]'){
+    return;
+  }
+
   try{
     const d=await api('/pages',{method:'POST',body:JSON.stringify({channel:activeChannel.name})});
     const created=Number(d.page?.page);
     if(!created)return;
+
+    // The server may return an already-existing page when another session
+    // created it at the same time.
     lastPage=Math.max(lastPage,created);
     activePage=created;
     saveActivePage();
     updatePageControls();
     await loadActivePage(false);
-  }catch(err){alert(err.message||'Unable to create the next message page.')}
+  }catch(err){
+    alert(err.message||'Unable to create the next message page.');
+  }
 }
 async function selectChannel(channelName,reportActivity=true){
   const channel=currentChannels.find(c=>c.name===channelName);
