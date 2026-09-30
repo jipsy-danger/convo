@@ -1732,7 +1732,10 @@ export default {
             }))[0]
           : await getLastChannelPage(env, channel.id);
         if (pageNumber !== null && !page) {
-          return error("Message page not found.", 404);
+          // A client can hold an old page number after another session
+          // removes/advances pages. Post to the channel's current page instead
+          // of rejecting the message.
+          page = await getLastChannelPage(env, channel.id);
         }
         if (!page) {
           page = await createNextChannelPage(env, channel.id);
