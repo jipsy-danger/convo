@@ -32,7 +32,6 @@ function applyPinValue(raw){
 }
 async function api(path,options={}){const {timeoutMs=12000,...requestOptions}=options;const headers={...(requestOptions.headers||{})};if(requestOptions.body!==undefined&&!headers['Content-Type'])headers['Content-Type']='application/json';if(currentPin)headers['X-Convo-Pin']=currentPin;if(currentUser?.role==='superadmin'&&superAdminSession)headers['X-Convo-SuperAdmin-Session']=superAdminSession;const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),timeoutMs);try{const r=await fetch(`${WORKER_URL}${path}`,{...requestOptions,headers,cache:'no-store',signal:requestOptions.signal||controller.signal}),t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{d={error:t}}if(!r.ok){const error=new Error(d.error||`Request failed (${r.status})`);error.status=r.status;throw error}return d}catch(err){if(err?.name==='AbortError'&&requestOptions.signal===undefined)throw new Error(`Request timed out after ${Math.round(timeoutMs/1000)}s.`);throw err}finally{clearTimeout(timer)}}
 function showAppError(message){console.error(message);hudStatus.textContent='CONNECTION ERROR';hudHint.textContent='CHECK WORKER ACCESS'}
-document.addEventListener('click',e=>{if(e.target.closest('#btnCreateChannel')){e.preventDefault();openChannelModal()}});
 const CHANNEL_CACHE_KEY='convo_channel_cache_v1';
 function readCachedChannels(){try{const parsed=JSON.parse(localStorage.getItem(CHANNEL_CACHE_KEY)||'[]');return Array.isArray(parsed)?parsed.filter(c=>c&&c.id&&c.name):[]}catch(e){return[]}}
 function writeCachedChannels(channels){try{localStorage.setItem(CHANNEL_CACHE_KEY,JSON.stringify(channels))}catch(e){}}
@@ -47,6 +46,7 @@ accessCore.addEventListener('pointerdown',beginSuperAdminHold,{passive:false});[
 function confirmSuperAdminJ(){if(!superAdminJArmed||superAdminMode)return;superAdminMode=true;superAdminJArmed=false;pinInput.type='password';pinInput.inputMode='numeric';pinInput.value='';hiddenPin='';hudStatus.textContent='ACCESS CORE READY';hudHint.textContent='ENTER 4-DIGIT PIN';bumpCore('admin-bump');focusAccess()}
 window.addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();hiddenPin='';pinInput.value='';pinInput.type='password';pinInput.inputMode='numeric';autoSubmitting=false;resetSuperAdminArming();authOverlay.classList.remove('super-mode','denied');hudStatus.textContent='ACCESS SYSTEM READY';hudHint.textContent='ENTER ACCESS CODE';updateHud();closeSuperAdminPanel();focusAccess();return}if(superAdminJArmed&&!superAdminMode&&(e.key==='j'||e.key==='J')){e.preventDefault();confirmSuperAdminJ()}});
 pinInput.addEventListener('input',e=>applyPinValue(e.target.value));
+nameInput?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();authForm.requestSubmit()}});
 window.addEventListener('keydown',e=>{
   if(!authOverlayVisible())return;
   if(e.code==='Escape')return;
@@ -55,10 +55,10 @@ window.addEventListener('keydown',e=>{
     else if(e.key.length===1){e.preventDefault();}
     return;
   }
-  if(document.activeElement===superAdminKeyInput||document.activeElement===nameInput)return;
+  if(document.activeElement===nameInput)return;
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   if(e.key==='Enter'){
-    if(hiddenPin.length===4&&!superAdminMode){e.preventDefault();authForm.requestSubmit();}if(superAdminMode&&hiddenPin.length===4&&superAdminKeyInput?.value.trim()){e.preventDefault();authForm.requestSubmit();}
+    if(hiddenPin.length===4&&!superAdminMode){e.preventDefault();authForm.requestSubmit();}if(superAdminMode&&hiddenPin.length===4){e.preventDefault();authForm.requestSubmit();}
     return;
   }
   if(e.key==='Backspace'){
@@ -82,14 +82,14 @@ async function login(){
   if(hiddenPin.length!==4){hudStatus.textContent='ACCESS CODE REQUIRED';authOverlay.classList.add('denied');autoSubmitting=false;focusAccess();return}
   const name=nameInput.value.trim(),isSuperAdmin=superAdminMode&&hiddenPin==='4999';
   try{
-    btnLogin.textContent='VERIFYING';btnLogin.disabled=true;hudStatus.textContent=isSuperAdmin?'ACCESS CORE VERIFYING':'IDENTITY VERIFYING';hudHint.textContent=isSuperAdmin?'VERIFYING SECOND FACTOR':'AUTHENTICATING';authOverlay.classList.remove('denied');authOverlay.classList.add('checking');
+    btnLogin.textContent='VERIFYING';btnLogin.disabled=true;hudStatus.textContent=isSuperAdmin?'ACCESS CORE VERIFYING':'IDENTITY VERIFYING';hudHint.textContent='AUTHENTICATING';authOverlay.classList.remove('denied');authOverlay.classList.add('checking');
     const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);let r,d;
     try{r=await fetch(WORKER_URL+'/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:hiddenPin,name,isSuperAdmin}),signal:controller.signal});d=await r.json()}catch(err){if(err?.name==='AbortError')throw new Error('Authentication timed out after 12s.');throw err}finally{clearTimeout(timeout)}
     if(!r.ok)throw new Error(d.error||'Authentication failed');
     if(d.isNew&&!name&&newUserNameBlock.style.display==='none'){newUserNameBlock.style.display='block';btnLogin.textContent='COMPLETE IDENTITY';btnLogin.disabled=false;hudStatus.textContent='NEW IDENTITY DETECTED';hudHint.textContent='ENTER DISPLAY NAME';authOverlay.classList.remove('checking');autoSubmitting=false;nameInput.focus();return}
     currentPin=d.assignedPin||hiddenPin;currentUser=d.user;superAdminSession=d.superAdminSession||'';if(currentUser?.role!=='superadmin')superAdminSession='';
     try{if(superAdminSession)localStorage.setItem('convo_superadmin_session',superAdminSession);else localStorage.removeItem('convo_superadmin_session');localStorage.setItem('convo_active_pin',currentPin);localStorage.setItem('convo_user',JSON.stringify(currentUser))}catch(e){}
-    if(Array.isArray(d.channels)&&d.channels.length){currentChannels=d.channels;writeCachedChannels(currentChannels);renderChannels()}
+    if(Array.isArray(d.channels)){currentChannels=d.channels;writeCachedChannels(currentChannels);renderChannels()}
     hudStatus.textContent=d.assignedPin?'IDENTITY CREATED':'ACCESS GRANTED';hudHint.textContent=d.assignedPin?'NEW PIN: '+d.assignedPin:(isSuperAdmin?'SUPER ADMIN CORE ONLINE':'IDENTITY VERIFIED');authOverlay.classList.remove('checking','denied');authOverlay.classList.add('granted');authOverlay.style.display='none';requestAnimationFrame(()=>initApp())
   }catch(err){console.error(err);resetSuperAdminArming();hudStatus.textContent='ACCESS DENIED';hudHint.textContent='TRY AGAIN';authOverlay.classList.remove('checking','granted');authOverlay.classList.add('denied');btnLogin.textContent='INITIALIZE';autoSubmitting=false;hiddenPin='';pinInput.value='';pinInput.type='password';pinInput.inputMode='numeric';updateHud();alert(err.message||'Failed to connect to authentication server.');focusAccess()}finally{btnLogin.disabled=false}
 }
@@ -734,7 +734,7 @@ window.addEventListener('pageshow',()=>{
     pinInput.value='';
     pinInput.type='password';
     pinInput.inputMode='numeric';
-    if(superAdminKeyInput){superAdminKeyInput.value='';superAdminKeyInput.hidden=true}
+    
     authOverlay.classList.remove('super-mode','denied','checking','granted');
     hudStatus.textContent='ACCESS SYSTEM READY';
     hudHint.textContent='ENTER ACCESS CODE';
