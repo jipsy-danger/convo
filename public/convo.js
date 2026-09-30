@@ -639,7 +639,64 @@ let fileExpiryTimer=setInterval(updateFileExpiryTimers,1000);
 updateFileExpiryTimers();
 
 async function deleteMessage(id){if(!confirm('Delete this message?'))return;try{await api('/messages/delete',{method:'POST',body:JSON.stringify({id})});await syncActiveMessages(true)}catch(err){alert(err.message||'Unable to delete message.')}}
-const messageContextMenu=document.createElement('div');messageContextMenu.className='message-context-menu';messageContextMenu.hidden=true;messageContextMenu.innerHTML='<button type="button" class="message-context-copy">Copy Message</button>';document.body.appendChild(messageContextMenu);let contextCopyText='';function closeMessageContextMenu(){messageContextMenu.hidden=true;contextCopyText=''}async function copyContextMessage(){const text=contextCopyText;if(!text){closeMessageContextMenu();return}try{await navigator.clipboard.writeText(text)}catch{const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{document.execCommand('copy')}catch{}area.remove()}closeMessageContextMenu()}document.addEventListener('contextmenu',event=>{const article=event.target.closest('#messagesFeed .message-card');if(!article)return;const text=article.querySelector('.message-text')?.textContent||'';if(!text)return;event.preventDefault();contextCopyText=text;messageContextMenu.hidden=false;const w=132,h=42,left=Math.min(event.clientX,innerWidth-w-8),top=Math.min(event.clientY,innerHeight-h-8);messageContextMenu.style.left=`${Math.max(8,left)}px`;messageContextMenu.style.top=`${Math.max(8,top)}px`});messageContextMenu.querySelector('.message-context-copy').addEventListener('click',copyContextMessage);document.addEventListener('click',e=>{if(!messageContextMenu.contains(e.target))closeMessageContextMenu()});window.addEventListener('keydown',e=>{if(e.key==='Escape')closeMessageContextMenu()});window.addEventListener('scroll',closeMessageContextMenu,true);window.addEventListener('resize',closeMessageContextMenu);window.handlePostMessage=async function(){if(!currentUser||!activeChannel||postingMessage)return;const input=$('msgInput'),text=input.value.replace(/\r\n/g,'\n').replace(/\r/g,'\n');if(!text.trim())return;postingMessage=true;const button=document.querySelector('.btn-send');input.disabled=true;if(button)button.disabled=true;try{await api('/messages',{method:'POST',body:JSON.stringify({channel:activeChannel.name,page:activePage,text,quotedMessageId:replyTarget?.id||null})});input.value='';input.style.height='';clearReplyTarget();await syncActiveMessages(false);updatePageControls();scrollMessagesToBottom('smooth')}catch(err){alert(err.message||'Unable to post message.')}finally{postingMessage=false;input.disabled=false;if(button)button.disabled=false;requestAnimationFrame(()=>{input.focus({preventScroll:true});input.setSelectionRange(input.value.length,input.value.length)})}};
+const messageContextMenu=document.createElement('div');messageContextMenu.className='message-context-menu';messageContextMenu.hidden=true;messageContextMenu.innerHTML='<button type="button" class="message-context-copy">Copy Message</button>';document.body.appendChild(messageContextMenu);let contextCopyText='';function closeMessageContextMenu(){messageContextMenu.hidden=true;contextCopyText=''}async function copyContextMessage(){const text=contextCopyText;if(!text){closeMessageContextMenu();return}try{await navigator.clipboard.writeText(text)}catch{const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{document.execCommand('copy')}catch{}area.remove()}closeMessageContextMenu()}document.addEventListener('contextmenu',event=>{const article=event.target.closest('#messagesFeed .message-card');if(!article)return;const text=article.querySelector('.message-text')?.textContent||'';if(!text)return;event.preventDefault();contextCopyText=text;messageContextMenu.hidden=false;const w=132,h=42,left=Math.min(event.clientX,innerWidth-w-8),top=Math.min(event.clientY,innerHeight-h-8);messageContextMenu.style.left=`${Math.max(8,left)}px`;messageContextMenu.style.top=`${Math.max(8,top)}px`});messageContextMenu.querySelector('.message-context-copy').addEventListener('click',copyContextMessage);document.addEventListener('click',e=>{if(!messageContextMenu.contains(e.target))closeMessageContextMenu()});window.addEventListener('keydown',e=>{if(e.key==='Escape')closeMessageContextMenu()});window.addEventListener('scroll',closeMessageContextMenu,true);window.addEventListener('resize',closeMessageContextMenu);window.handlePostMessage=async function(){
+  if(!currentUser||!activeChannel||postingMessage)return;
+  const input=$('msgInput');
+  const text=input.value.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  if(!text.trim())return;
+
+  postingMessage=true;
+  const button=document.querySelector('.btn-send');
+  input.disabled=true;
+  if(button)button.disabled=true;
+
+  const channel=activeChannel;
+  let page=activePage;
+  const payload=()=>({channel:channel.name,page,text,quotedMessageId:replyTarget?.id||null});
+
+  try{
+    let result;
+    try{
+      result=await api('/messages',{method:'POST',body:JSON.stringify(payload())});
+    }catch(err){
+      // A page can become stale when another tab deletes/advances it.
+      // Re-read the channel pages once and retry on the current valid page.
+      if(err?.status===404&&/message page|page not found/i.test(String(err.message||''))){
+        await loadChannelPages(channel);
+        page=activePage;
+        result=await api('/messages',{method:'POST',body:JSON.stringify(payload())});
+      }else{
+        throw err;
+      }
+    }
+
+    input.value='';
+    input.style.height='';
+    clearReplyTarget();
+
+    // Refresh the actual page after the successful write instead of relying
+    // on the background 3-second synchronizer, which may already be in flight.
+    if(activeChannel?.id===channel.id){
+      await loadActivePage(false);
+      updatePageControls();
+      scrollMessagesToBottom('smooth');
+    }
+
+    return result;
+  }catch(err){
+    console.error('Message post failed.',err);
+    alert(err.message||'Unable to post message.');
+    throw err;
+  }finally{
+    postingMessage=false;
+    input.disabled=false;
+    if(button)button.disabled=false;
+    requestAnimationFrame(()=>{
+      input.focus({preventScroll:true});
+      input.setSelectionRange(input.value.length,input.value.length);
+    });
+  }
+};
 replyComposerClose?.addEventListener('click',()=>{clearReplyTarget();$('msgInput')?.focus({preventScroll:true})});
 const composerForm=document.querySelector('.input-container');
 const msgInput=$('msgInput');
