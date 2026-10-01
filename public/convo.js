@@ -98,6 +98,8 @@ async function loadChannels(preferredName=null,select=true){if(!currentChannels.
 function renderChannels(){const list=$('channelNavList');list.replaceChildren();const canManageChannel=currentUser?.role==='superadmin'||currentUser?.role==='admin';currentChannels.forEach(channel=>{const row=document.createElement('div');row.className='channel-item-row';const b=document.createElement('button');b.type='button';b.className='channel-item'+(activeChannel?.id===channel.id?' active':'');b.textContent=(channel.isPrivate?'🔒 ':'# ')+channel.name;b.title=channel.description||channel.name;b.addEventListener('click',()=>selectChannel(channel.name));row.appendChild(b);if(((currentUser?.role==='superadmin')||(currentUser?.role==='admin'&&!channel.isPrivate))&&channel.name!=='general'){const del=document.createElement('button');del.type='button';del.className='channel-delete';del.setAttribute('aria-label',`Delete #${channel.name}`);del.title=`Delete #${channel.name}`;del.textContent='×';del.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();activeChannel?.id===channel.id?window.deleteCurrentGroup():deleteChannelById(channel.id)});row.appendChild(del)}list.appendChild(row)})}
 function getMessageSignature(messages){return JSON.stringify(messages.map(m=>[m.id,m.channelId,m.userId,m.author,m.role,m.text,m.quotedMessage?.id,m.expiredFileCount,m.isMentioned,m.time||m.createdAt]));}
 function pageStorageKey(channel){return `convo_active_page_${channel?.id||channel?.name||'general'}`;}
+let pageDeletePointerHandledAt=0;
+
 function renderPageMenu(){
   if(!messagePageMenu)return;
   messagePageMenu.replaceChildren();
@@ -123,20 +125,48 @@ function renderPageMenu(){
     const deleteButton=document.createElement('button');
     deleteButton.type='button';
     deleteButton.className='message-page-delete';
+    deleteButton.dataset.page=String(page);
     deleteButton.setAttribute('aria-label','Delete page '+page);
-    deleteButton.setAttribute('title',page===lastPage?'Delete page '+page:'Delete page '+page);
-    deleteButton.textContent='×';
+    deleteButton.title='Delete page '+page;
+    deleteButton.textContent='Delete';
     deleteButton.disabled=lastPage<=1;
-    deleteButton.addEventListener('click',async e=>{
-      e.preventDefault();
-      e.stopPropagation();
-      await deleteMessagePage(page);
-    });
 
     row.append(selectButton,deleteButton);
     messagePageMenu.appendChild(row);
   }
 }
+
+function requestPageDeleteFromElement(event){
+  const button=event.target.closest?.('.message-page-delete');
+  if(!button||!messagePageMenu.contains(button))return false;
+
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+
+  const page=Number(button.dataset.page);
+  if(!Number.isInteger(page)||page<1)return true;
+
+  if(event.type==='pointerdown'){
+    if(event.button!==0)return true;
+    pageDeletePointerHandledAt=Date.now();
+    deleteMessagePage(page);
+    return true;
+  }
+
+  if(event.type==='click'){
+    if(Date.now()-pageDeletePointerHandledAt<500)return true;
+    deleteMessagePage(page);
+    return true;
+  }
+
+  return true;
+}
+
+// Delegated handlers are attached once to the persistent menu container.
+// They continue to work after every page-list rebuild.
+messagePageMenu?.addEventListener('pointerdown',requestPageDeleteFromElement,true);
+messagePageMenu?.addEventListener('click',requestPageDeleteFromElement,true);
 
 function closePageMenu(){
   if(!messagePageMenu)return;
@@ -361,6 +391,7 @@ async function selectChannel(channelName,reportActivity=true,initialOpen=false){
 }
 btnPagePrev?.addEventListener('click',()=>selectMessagePage(activePage-1));
 btnPageNext?.addEventListener('click',()=>nextMessagePage());
+$('btnDeletePage')?.addEventListener('click',()=>deleteMessagePage(activePage));
 messagePageIndicator?.addEventListener('click',e=>{e.stopPropagation();togglePageMenu()});
 document.addEventListener('click',e=>{if(!e.target.closest('.message-page-controls'))closePageMenu()});
 window.addEventListener('keydown',e=>{if(e.key==='Escape')closePageMenu()});
