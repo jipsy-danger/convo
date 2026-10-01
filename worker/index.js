@@ -1314,6 +1314,110 @@ export default {
         });
       }
 
+      if (path === "/pages/images/clear" && request.method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const channelName = String(body.channel || "").trim().toLowerCase();
+        const pageNumber = Number(body.page);
+
+        if (!channelName) return error("Channel is required.");
+        if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+          return error("Valid page number is required.");
+        }
+
+        const channel = await getChannelByName(env, channelName);
+        if (!channel) return error("Channel not found.", 404);
+        await requireChannelAccess(env, user, channel);
+
+        const pages = await supabaseFetch(env, "channel_pages", {
+          query:
+            `?select=id,channel_id,page_number&channel_id=eq.${encodeURIComponent(
+              channel.id
+            )}&page_number=eq.${encodeURIComponent(pageNumber)}&limit=1`,
+        });
+        const page = Array.isArray(pages) && pages.length ? pages[0] : null;
+        if (!page) return error("Message page not found.", 404);
+
+        const messages = await supabaseFetch(env, "messages", {
+          query:
+            `?select=id,text&channel_id=eq.${encodeURIComponent(
+              channel.id
+            )}&page_id=eq.${encodeURIComponent(page.id)}&limit=300`,
+        });
+
+        const messageRows = Array.isArray(messages) ? messages : [];
+        const messageIds = messageRows.map((row) => row.id).filter(Boolean);
+        if (!messageIds.length) {
+          return response({ ok: true, clearedImages: 0, clearedMessages: 0 });
+        }
+
+        const attachments = await supabaseFetch(env, "message_attachments", {
+          query:
+            `?select=id,message_id,bucket,object_path,mime_type,deleted_at&message_id=in.(${messageIds
+              .map((id) => encodeURIComponent(id))
+              .join(",")})&deleted_at=is.null&limit=1000`,
+        });
+
+        const imageAttachments = (Array.isArray(attachments) ? attachments : [])
+          .filter((row) => String(row.mime_type || "").toLowerCase().startsWith("image/"));
+
+        if (!imageAttachments.length) {
+          return response({ ok: true, clearedImages: 0, clearedMessages: 0 });
+        }
+
+        for (const attachment of imageAttachments) {
+          try {
+            await deleteStorageObject(
+              env,
+              attachment.bucket || ATTACHMENT_BUCKET,
+              attachment.object_path
+            );
+          } catch (err) {
+            // Keep the DB row untouched when storage deletion fails.
+            console.warn("Image storage cleanup failed; keeping attachment row.", err);
+            continue;
+          }
+
+          await supabaseFetch(env, "message_attachments", {
+            method: "PATCH",
+            query:
+              `?id=eq.${encodeURIComponent(attachment.id)}&deleted_at=is.null`,
+            body: { deleted_at: new Date().toISOString() },
+            headers: { Prefer: "return=minimal" },
+          });
+        }
+
+        // Remove message rows that became completely empty after clearing
+        // their image-only attachments. Text and non-image attachments remain.
+        let clearedMessages = 0;
+        for (const message of messageRows) {
+          if (String(message.text || "").trim()) continue;
+
+          const remaining = await supabaseFetch(env, "message_attachments", {
+            query:
+              `?select=id&message_id=eq.${encodeURIComponent(
+                message.id
+              )}&deleted_at=is.null&limit=1`,
+          });
+
+          if (!Array.isArray(remaining) || !remaining.length) {
+            await supabaseFetch(env, "messages", {
+              method: "DELETE",
+              query: `?id=eq.${encodeURIComponent(message.id)}`,
+              headers: { Prefer: "return=minimal" },
+            });
+            clearedMessages += 1;
+          }
+        }
+
+        await recordActivitySafe(env, user, channel.id, "POSTED");
+
+        return response({
+          ok: true,
+          clearedImages: imageAttachments.length,
+          clearedMessages,
+        });
+      }
+
       if (path === "/channels" && request.method === "GET") {
         let channels = await supabaseGetAll(
           env,
