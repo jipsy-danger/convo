@@ -1487,23 +1487,51 @@ export default {
         });
         const channel = Array.isArray(currentRows) ? currentRows[0] : null;
         if (!channel) return error("Channel not found.", 404);
+
         if (channel.is_private && user.role !== "superadmin") {
           return error("Only the Super Admin can manage private channels.", 403);
         }
-        if (channel.name === "general") {
-          return error("The general channel cannot be renamed.", 400);
-        }
 
         const body = await request.json().catch(() => ({}));
-        const name = String(body.name || "")
+        const settingsChangeRequested =
+          Object.prototype.hasOwnProperty.call(body, "isPrivate") ||
+          Object.prototype.hasOwnProperty.call(body, "memberIds");
+
+        // The admin console settings editor is a Super Admin feature.
+        // Existing public-channel admin renaming remains supported, but only
+        // Super Admins may change visibility or memberships.
+        if (settingsChangeRequested && user.role !== "superadmin") {
+          return error("Only the Super Admin can change channel settings.", 403);
+        }
+
+        const name = String(
+          Object.prototype.hasOwnProperty.call(body, "name") ? body.name : channel.name
+        )
           .trim()
           .toLowerCase()
           .replace(/[^a-z0-9-_]+/g, "-")
           .replace(/^-+|-+$/g, "")
           .slice(0, MAX_CHANNEL_LENGTH);
 
-        if (!name || name === "general") {
+        if (!name || name === "general" && channel.name !== "general") {
           return error("Choose a valid channel name.");
+        }
+        if (channel.name === "general" && name !== "general") {
+          return error("The general channel cannot be renamed.", 400);
+        }
+
+        const description = cleanDescription(
+          Object.prototype.hasOwnProperty.call(body, "description")
+            ? body.description
+            : channel.description
+        );
+
+        const nextIsPrivate = Object.prototype.hasOwnProperty.call(body, "isPrivate")
+          ? Boolean(body.isPrivate)
+          : Boolean(channel.is_private);
+
+        if (channel.name === "general" && nextIsPrivate) {
+          return error("The general channel must remain public.", 400);
         }
 
         const duplicate = await supabaseFetch(env, "channels", {
@@ -1520,14 +1548,93 @@ export default {
             method: "PATCH",
             query:
               `?id=eq.${encodeURIComponent(id)}&select=id,name,description,created_by,created_at,is_private`,
-            body: { name },
+            body: {
+              name,
+              description,
+              is_private: nextIsPrivate,
+            },
             headers: { Prefer: "return=representation" },
           });
         } catch (err) {
           if (isUniqueViolation(err)) return error("Channel already exists.", 409);
           throw err;
         }
+
         const saved = Array.isArray(updated) ? updated[0] : updated;
+
+        if (user.role === "superadmin" && nextIsPrivate) {
+          const requested = [...new Set(
+            (Array.isArray(body.memberIds) ? body.memberIds : [])
+              .map((memberId) => String(memberId).trim())
+              .filter(Boolean)
+          )];
+
+          if (!requested.length && !channel.is_private) {
+            // Roll back a public -> private conversion that has no selected users.
+            await supabaseFetch(env, "channels", {
+              method: "PATCH",
+              query: `?id=eq.${encodeURIComponent(id)}`,
+              body: {
+                name: channel.name,
+                description: channel.description,
+                is_private: false,
+              },
+              headers: { Prefer: "return=minimal" },
+            });
+            return error("Select at least one user for a private channel.", 400);
+          }
+
+          if (Array.isArray(body.memberIds)) {
+            const users = await supabaseGetAll(env, "users", "id,name,role");
+            const userMap = new Map(users.map((candidate) => [String(candidate.id), candidate]));
+            if (requested.some((memberId) =>
+              !userMap.has(memberId) || userMap.get(memberId).role === "superadmin"
+            )) {
+              return error("Private channel members must be existing non-Super Admin users.", 400);
+            }
+
+            const existing = await supabaseFetch(env, "channel_members", {
+              query:
+                `?select=user_id&channel_id=eq.${encodeURIComponent(id)}&limit=1000`,
+            });
+            const existingIds = new Set(
+              (Array.isArray(existing) ? existing : []).map((row) => String(row.user_id))
+            );
+            const desired = new Set(requested);
+
+            for (const memberId of existingIds) {
+              if (!desired.has(memberId)) {
+                await supabaseFetch(env, "channel_members", {
+                  method: "DELETE",
+                  query:
+                    `?channel_id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(memberId)}`,
+                  headers: { Prefer: "return=minimal" },
+                });
+              }
+            }
+            for (const memberId of desired) {
+              if (!existingIds.has(memberId)) {
+                await supabaseFetch(env, "channel_members", {
+                  method: "POST",
+                  body: { channel_id: id, user_id: Number(memberId) },
+                  headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+                });
+              }
+            }
+          }
+        }
+
+        if (user.role === "superadmin" && !nextIsPrivate && channel.is_private) {
+          // Public channels do not need memberships. Removing the old private
+          // memberships prevents stale private access if the channel becomes
+          // private again later and the Super Admin chooses a fresh selection.
+          await supabaseFetch(env, "channel_members", {
+            method: "DELETE",
+            query:
+              `?channel_id=eq.${encodeURIComponent(id)}`,
+            headers: { Prefer: "return=minimal" },
+          });
+        }
 
         return response({
           ok: true,
