@@ -1,0 +1,306 @@
+/* Passkey security UI */
+.passkey-security-section{
+  margin-top:18px;
+  padding-top:18px;
+  border-top:1px solid var(--line);
+}
+.passkey-security-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:14px;
+  margin-bottom:10px;
+}
+.passkey-security-copy{min-width:0}
+.passkey-security-copy strong{
+  display:block;
+  color:#e7edf1;
+  font-size:.78rem;
+  font-weight:650;
+}
+.passkey-security-copy small{
+  display:block;
+  margin-top:4px;
+  color:#68727a;
+  font-size:.64rem;
+  line-height:1.4;
+}
+.passkey-status{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  margin-top:8px;
+  color:#737e86;
+  font:600 .55rem/1 var(--font-mono);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.passkey-status::before{
+  content:"";
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:#58636b;
+  box-shadow:0 0 0 2px rgba(88,99,107,.08);
+}
+.passkey-status.enabled{color:#95e5ff}
+.passkey-status.enabled::before{
+  background:#67dfff;
+  box-shadow:0 0 10px rgba(103,223,255,.42);
+}
+.passkey-status.required{color:#ffe1a5}
+.passkey-status.required::before{
+  background:#f1c56e;
+  box-shadow:0 0 10px rgba(241,197,110,.3);
+}
+.passkey-list{
+  display:grid;
+  gap:6px;
+}
+.passkey-item{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:10px;
+  align-items:center;
+  padding:9px 10px;
+  border:1px solid var(--line);
+  border-radius:6px;
+  background:#101216;
+}
+.passkey-item-main{min-width:0}
+.passkey-item-main strong{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#dfe6eb;
+  font-size:.72rem;
+  font-weight:600;
+}
+.passkey-item-main small{
+  display:block;
+  margin-top:3px;
+  color:#616b73;
+  font:500 .53rem/1.25 var(--font-mono);
+}
+.passkey-item-action{
+  min-width:26px;
+  height:26px;
+  padding:0 8px;
+  border:1px solid rgba(220,160,167,.18);
+  border-radius:5px;
+  background:#151216;
+  color:#c88790;
+  font:600 .52rem/1 var(--font-mono);
+  cursor:pointer;
+}
+.passkey-item-action:hover{
+  border-color:rgba(220,160,167,.38);
+  background:#201619;
+  color:#f0a8af;
+}
+.passkey-add{
+  width:100%;
+  min-height:34px;
+  margin-top:7px;
+  padding:0 12px;
+  border:1px solid rgba(126,220,255,.2);
+  border-radius:6px;
+  background:#10171c;
+  color:#81d8f8;
+  font:600 .57rem/1 var(--font-mono);
+  letter-spacing:.05em;
+  cursor:pointer;
+}
+.passkey-add:hover{
+  border-color:rgba(126,220,255,.4);
+  background:#132029;
+  color:#b0ecff;
+}
+.passkey-add:disabled,
+.passkey-item-action:disabled{
+  opacity:.35;
+  cursor:default;
+}
+.passkey-empty{
+  padding:11px 10px;
+  border:1px dashed rgba(255,255,255,.09);
+  border-radius:6px;
+  background:rgba(255,255,255,.012);
+  color:#68727a;
+  font-size:.64rem;
+  line-height:1.4;
+}
+
+/* Super Admin per-user passkey gate */
+.admin-user-row{
+  position:relative;
+}
+.admin-user-security{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.admin-passkey-toggle{
+  position:relative;
+  width:34px;
+  height:18px;
+  flex:0 0 34px;
+  padding:0;
+  border:1px solid rgba(255,255,255,.11);
+  border-radius:999px;
+  background:#171b20;
+  cursor:pointer;
+  transition:background .16s,border-color .16s;
+}
+.admin-passkey-toggle::before{
+  content:"";
+  position:absolute;
+  top:3px;
+  left:3px;
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:#6c767e;
+  transition:transform .16s,background .16s;
+}
+.admin-passkey-toggle[aria-checked="true"]{
+  border-color:rgba(103,223,255,.35);
+  background:#10232d;
+}
+.admin-passkey-toggle[aria-checked="true"]::before{
+  transform:translateX(16px);
+  background:#67dfff;
+  box-shadow:0 0 9px rgba(103,223,255,.4);
+}
+.admin-passkey-toggle:disabled{
+  opacity:.35;
+  cursor:default;
+}
+.admin-passkey-label{
+  color:#626d75;
+  font:600 .5rem/1 var(--font-mono);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.admin-passkey-label.enabled{color:#82dafa}
+.admin-passkey-count{
+  color:#69757d;
+  font:500 .5rem/1 var(--font-mono);
+}
+
+.passkey-dialog-backdrop{
+  position:fixed;
+  inset:0;
+  z-index:1500;
+  display:grid;
+  place-items:center;
+  padding:20px;
+  background:rgba(0,0,0,.68);
+  backdrop-filter:blur(8px);
+}
+.passkey-dialog-backdrop[hidden]{display:none}
+.passkey-dialog{
+  width:min(430px,calc(100vw - 32px));
+  border:1px solid rgba(126,220,255,.2);
+  border-radius:8px;
+  background:#0b0e12;
+  box-shadow:0 24px 80px rgba(0,0,0,.6);
+}
+.passkey-dialog-head{
+  padding:16px 17px;
+  border-bottom:1px solid var(--line);
+}
+.passkey-dialog-head h3{
+  color:#edf2f5;
+  font-size:.96rem;
+  font-weight:650;
+}
+.passkey-dialog-head p{
+  margin-top:4px;
+  color:#68727a;
+  font-size:.64rem;
+  line-height:1.45;
+}
+.passkey-dialog-body{
+  display:grid;
+  gap:12px;
+  padding:17px;
+}
+.passkey-dialog-field{
+  display:grid;
+  gap:6px;
+}
+.passkey-dialog-field span{
+  color:#7d8991;
+  font:600 .53rem/1 var(--font-mono);
+  letter-spacing:.1em;
+}
+.passkey-dialog-field input{
+  width:100%;
+  height:36px;
+  padding:0 10px;
+  border:1px solid var(--line);
+  border-radius:5px;
+  outline:none;
+  background:#070a0d;
+  color:#e0e7eb;
+  font-size:.74rem;
+}
+.passkey-dialog-field input:focus{
+  border-color:rgba(126,220,255,.42);
+}
+.passkey-dialog-note{
+  padding:9px 10px;
+  border:1px solid rgba(126,220,255,.1);
+  border-radius:5px;
+  background:rgba(126,220,255,.025);
+  color:#69757d;
+  font-size:.62rem;
+  line-height:1.45;
+}
+.passkey-dialog-error{
+  min-height:15px;
+  color:#e79aa0;
+  font-size:.62rem;
+}
+.passkey-dialog-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:7px;
+  padding:13px 17px;
+  border-top:1px solid var(--line);
+}
+.passkey-dialog-actions button{
+  padding:8px 11px;
+  border:1px solid var(--line);
+  border-radius:5px;
+  background:#11151a;
+  color:#8a959d;
+  font:600 .56rem/1 var(--font-mono);
+  cursor:pointer;
+}
+.passkey-dialog-actions button.primary{
+  border-color:rgba(126,220,255,.35);
+  background:#10212b;
+  color:#9be7ff;
+}
+.passkey-dialog-actions button:hover{
+  border-color:var(--line-strong);
+  color:#e9eef1;
+}
+.passkey-dialog-actions button.primary:hover{
+  border-color:rgba(126,220,255,.5);
+  background:#122a36;
+}
+.passkey-dialog-actions button:disabled{
+  opacity:.35;
+  cursor:default;
+}
+
+@media(max-width:560px){
+  .passkey-item{grid-template-columns:minmax(0,1fr) auto}
+  .admin-user-security{gap:6px}
+  .admin-passkey-label{display:none}
+  .passkey-dialog{width:100%}
+}
