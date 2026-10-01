@@ -1674,6 +1674,7 @@ export default {
         if (!["admin", "superadmin"].includes(user.role)) {
           return error("Forbidden.", 403);
         }
+
         const deleteBody = request.method === "POST"
           ? await request.json().catch(() => ({}))
           : {};
@@ -1683,13 +1684,16 @@ export default {
         const pageNumber = Number(
           request.method === "POST" ? deleteBody.page : url.searchParams.get("page")
         );
+
         if (!channelName) return error("Channel is required.");
         if (!Number.isInteger(pageNumber) || pageNumber < 1) {
           return error("Valid page number is required.");
         }
+
         const channel = await getChannelByName(env, channelName);
         if (!channel) return error("Channel not found.", 404);
         await requireChannelAccess(env, user, channel);
+
         const pages = await supabaseFetch(env, "channel_pages", {
           query:
             `?select=id,channel_id,page_number&channel_id=eq.${encodeURIComponent(channel.id)}&order=page_number.asc`,
@@ -1700,49 +1704,35 @@ export default {
         if (pages.length <= 1) {
           return error("The only message page cannot be deleted.", 400);
         }
-        const page = pages.find((item) => Number(item.page_number) === pageNumber);
-        if (!page) return error("Message page not found.", 404);
 
+        const targetPage = pages.find((item) => Number(item.page_number) === pageNumber);
+        if (!targetPage) return error("Message page not found.", 404);
+
+        // Remove external file objects first. Database rows then cascade
+        // atomically with the page deletion/renumber operation.
         const pageMessages = await supabaseFetch(env, "messages", {
           query:
-            `?select=id&channel_id=eq.${encodeURIComponent(channel.id)}&page_id=eq.${encodeURIComponent(page.id)}`,
+            `?select=id&channel_id=eq.${encodeURIComponent(channel.id)}&page_id=eq.${encodeURIComponent(targetPage.id)}`,
         });
         await deleteAttachmentObjectsForMessages(
           env,
           (Array.isArray(pageMessages) ? pageMessages : []).map((item) => item.id)
         );
-        await supabaseFetch(env, "messages", {
-          method: "DELETE",
-          query: `?channel_id=eq.${encodeURIComponent(channel.id)}&page_id=eq.${encodeURIComponent(page.id)}`,
-          headers: { Prefer: "return=minimal" },
+
+        const result = await supabaseFetch(env, "rpc/delete_channel_page", {
+          method: "POST",
+          body: {
+            p_channel_id: channel.id,
+            p_page_number: pageNumber,
+          },
+          headers: { Prefer: "return=representation" },
         });
-        await supabaseFetch(env, "channel_pages", {
-          method: "DELETE",
-          query: `?id=eq.${encodeURIComponent(page.id)}&channel_id=eq.${encodeURIComponent(channel.id)}`,
-          headers: { Prefer: "return=minimal" },
-        });
 
-        const pagesAfterDelete = pages
-          .filter((item) => String(item.id) !== String(page.id))
-          .sort((a, b) => Number(a.page_number) - Number(b.page_number));
-
-        for (const [index, remainingPage] of pagesAfterDelete.entries()) {
-          const desiredNumber = index + 1;
-          if (Number(remainingPage.page_number) === desiredNumber) continue;
-
-          await supabaseFetch(env, "channel_pages", {
-            method: "PATCH",
-            query:
-              `?id=eq.${encodeURIComponent(remainingPage.id)}&channel_id=eq.${encodeURIComponent(channel.id)}`,
-            body: { page_number: desiredNumber },
-            headers: { Prefer: "return=minimal" },
-          });
-        }
-
+        const payload = Array.isArray(result) ? result[0] : result;
         return response({
           ok: true,
           deletedPage: pageNumber,
-          lastPage: Math.max(1, pagesAfterDelete.length),
+          lastPage: Number(payload?.lastPage) || Math.max(1, pages.length - 1),
         });
       }
 
