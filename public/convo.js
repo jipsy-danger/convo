@@ -98,99 +98,45 @@ async function loadChannels(preferredName=null,select=true){if(!currentChannels.
 function renderChannels(){const list=$('channelNavList');list.replaceChildren();const canManageChannel=currentUser?.role==='superadmin'||currentUser?.role==='admin';currentChannels.forEach(channel=>{const row=document.createElement('div');row.className='channel-item-row';const b=document.createElement('button');b.type='button';b.className='channel-item'+(activeChannel?.id===channel.id?' active':'');b.textContent=(channel.isPrivate?'🔒 ':'# ')+channel.name;b.title=channel.description||channel.name;b.addEventListener('click',()=>selectChannel(channel.name));row.appendChild(b);if(((currentUser?.role==='superadmin')||(currentUser?.role==='admin'&&!channel.isPrivate))&&channel.name!=='general'){const del=document.createElement('button');del.type='button';del.className='channel-delete';del.setAttribute('aria-label',`Delete #${channel.name}`);del.title=`Delete #${channel.name}`;del.textContent='×';del.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();activeChannel?.id===channel.id?window.deleteCurrentGroup():deleteChannelById(channel.id)});row.appendChild(del)}list.appendChild(row)})}
 function getMessageSignature(messages){return JSON.stringify(messages.map(m=>[m.id,m.channelId,m.userId,m.author,m.role,m.text,m.quotedMessage?.id,m.expiredFileCount,m.isMentioned,m.time||m.createdAt]));}
 function pageStorageKey(channel){return `convo_active_page_${channel?.id||channel?.name||'general'}`;}
-let pageRightClickHandledAt=0;
-
-function triggerPageRightDelete(page,event){
-  if(event){
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-  }
-  pageRightClickHandledAt=Date.now();
-  closePageMenu();
-  deleteMessagePage(page);
-}
-
-function pageControlTarget(event){
-  const path=typeof event.composedPath==='function'?event.composedPath():[];
-  for(const node of path){
-    if(node?.nodeType!==1)continue;
-    if(node.matches?.('.message-page-option'))return {type:'page',page:Number(node.dataset.page)};
-    if(node.id==='messagePageIndicator')return {type:'indicator',page:activePage};
-    if(node.id==='messagePageMenu')return {type:'menu'};
-    if(node.classList?.contains('message-page-controls'))return {type:'controls'};
-  }
-
-  const target=event.target?.closest?.('.message-page-option,#messagePageIndicator,#messagePageMenu,.message-page-controls');
-  if(target?.matches?.('.message-page-option'))return {type:'page',page:Number(target.dataset.page)};
-  if(target?.id==='messagePageIndicator')return {type:'indicator',page:activePage};
-  if(target?.id==='messagePageMenu')return {type:'menu'};
-  if(target?.classList?.contains('message-page-controls'))return {type:'controls'};
-  return null;
-}
-
-function handlePageRightClick(event){
-  const target=pageControlTarget(event);
-  if(!target)return;
-
-  event.preventDefault();
-  event.stopPropagation();
-  event.stopImmediatePropagation();
-
-  if(Date.now()-pageRightClickHandledAt<500)return;
-
-  if(target.type==='page'){
-    triggerPageRightDelete(target.page);
-    return;
-  }
-
-  // Right-clicking the page indicator itself means the currently displayed
-  // page. Container padding is treated the same way for predictable UX.
-  if(target.type==='indicator'||target.type==='controls'){
-    triggerPageRightDelete(activePage);
-  }
-}
-
 function renderPageMenu(){
   if(!messagePageMenu)return;
   messagePageMenu.replaceChildren();
 
   for(let page=1;page<=lastPage;page++){
-    const button=document.createElement('button');
-    button.type='button';
-    button.className='message-page-option'+(page===activePage?' active':'');
-    button.setAttribute('role','option');
-    button.setAttribute('aria-selected',page===activePage?'true':'false');
-    button.dataset.page=String(page);
-    button.textContent=String(page);
+    const row=document.createElement('div');
+    row.className='message-page-row'+(page===activePage?' active':'');
+    row.dataset.page=String(page);
 
-    button.addEventListener('click',async e=>{
+    const selectButton=document.createElement('button');
+    selectButton.type='button';
+    selectButton.className='message-page-option';
+    selectButton.setAttribute('role','option');
+    selectButton.setAttribute('aria-selected',page===activePage?'true':'false');
+    selectButton.textContent=String(page);
+    selectButton.addEventListener('click',async e=>{
       e.preventDefault();
       e.stopPropagation();
       closePageMenu();
       await selectMessagePage(page);
     });
 
-    button.addEventListener('pointerdown',e=>{
-      if(e.button!==2)return;
-      handlePageRightClick(e);
+    const deleteButton=document.createElement('button');
+    deleteButton.type='button';
+    deleteButton.className='message-page-delete';
+    deleteButton.setAttribute('aria-label','Delete page '+page);
+    deleteButton.setAttribute('title',page===lastPage?'Delete page '+page:'Delete page '+page);
+    deleteButton.textContent='×';
+    deleteButton.disabled=lastPage<=1;
+    deleteButton.addEventListener('click',async e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      await deleteMessagePage(page);
     });
 
-    button.addEventListener('contextmenu',e=>handlePageRightClick(e));
-
-    messagePageMenu.appendChild(button);
+    row.append(selectButton,deleteButton);
+    messagePageMenu.appendChild(row);
   }
 }
-
-// Capture phase is deliberate: the browser's native context menu must be
-// suppressed before any bubbling listener can reopen it.
-document.addEventListener('contextmenu',handlePageRightClick,true);
-document.addEventListener('pointerdown',event=>{
-  if(event.button!==2)return;
-  const target=pageControlTarget(event);
-  if(!target)return;
-  handlePageRightClick(event);
-},true);
 
 function closePageMenu(){
   if(!messagePageMenu)return;
