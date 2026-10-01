@@ -222,11 +222,99 @@
     event.stopPropagation();
   }, true);
 
-  // Block the native browser context menu throughout the open J console.
+  let userActionMenu = null;
+  let userActionTargetId = '';
+  let userActionTargetName = '';
+
+  function ensureUserActionMenu() {
+    if (userActionMenu) return userActionMenu;
+    userActionMenu = document.createElement('div');
+    userActionMenu.className = 'super-user-action-menu';
+    userActionMenu.hidden = true;
+    userActionMenu.innerHTML = '<button type="button" class="super-user-action-delete">Delete User</button>';
+    document.body.appendChild(userActionMenu);
+
+    userActionMenu.querySelector('.super-user-action-delete')?.addEventListener('click', async event => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const targetId = userActionTargetId;
+      const targetName = userActionTargetName || 'this user';
+      closeUserActionMenu();
+
+      if (!targetId || !isSuperAdmin()) return;
+      if (!confirm('Delete ' + targetName + '? This removes the user account and its access.')) return;
+
+      try {
+        await api()('/users/remove', {
+          method: 'POST',
+          body: JSON.stringify({ id: targetId })
+        });
+        await window.convoRefreshSuperAdminUsers?.();
+        await window.convoRefreshSuperAdminAnalytics?.();
+      } catch (error) {
+        alert(error.message || 'Unable to delete user.');
+      }
+    });
+
+    return userActionMenu;
+  }
+
+  function closeUserActionMenu() {
+    if (!userActionMenu) return;
+    userActionMenu.hidden = true;
+    userActionTargetId = '';
+    userActionTargetName = '';
+  }
+
+  function openUserActionMenu(row, targetId, clientX, clientY) {
+    const menu = ensureUserActionMenu();
+    const name = row.querySelector('.admin-user-main strong')?.textContent?.trim() || 'User';
+
+    userActionTargetId = targetId;
+    userActionTargetName = name;
+    menu.hidden = false;
+
+    const width = 150;
+    const height = 38;
+    const left = Math.max(8, Math.min(clientX, window.innerWidth - width - 8));
+    const top = Math.max(8, Math.min(clientY, window.innerHeight - height - 8));
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+  }
+
+  document.addEventListener('pointerdown', event => {
+    if (!userActionMenu || userActionMenu.hidden) return;
+    if (event.button === 2) return;
+    if (event.target.closest?.('.super-user-action-menu')) return;
+    closeUserActionMenu();
+  }, true);
+
+  window.addEventListener('resize', closeUserActionMenu);
+
+  // The J console owns right-clicks. On a user row, open the
+  // dedicated user action menu; everywhere else just suppress the browser menu.
   panel.addEventListener('contextmenu', event => {
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
+
+    const row = event.target.closest?.('.admin-user-row[data-user-id]');
+    if (!row) {
+      closeUserActionMenu();
+      return;
+    }
+
+    if (!isSuperAdmin()) return;
+
+    const targetId = String(row.dataset.userId || '');
+    const targetRole = String(row.dataset.userRole || 'user');
+    if (!targetId || targetId === String(state().currentUser?.id || '') || targetRole === 'superadmin') {
+      closeUserActionMenu();
+      return;
+    }
+
+    openUserActionMenu(row, targetId, event.clientX, event.clientY);
   }, true);
 
   close?.addEventListener('click', event => { event.preventDefault(); closeEditor(); });
