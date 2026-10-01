@@ -119,19 +119,29 @@ function renderPageMenu(){
       await selectMessagePage(page);
     });
 
+    const clearButton=document.createElement('button');
+    clearButton.type='button';
+    clearButton.className='message-page-clear';
+    clearButton.textContent='Clear';
+    clearButton.title='Clear images from page '+page;
+    clearButton.disabled=!currentUser;
+
     const deleteButton=document.createElement('button');
     deleteButton.type='button';
     deleteButton.className='message-page-delete';
     deleteButton.textContent='Delete';
-    deleteButton.disabled=!currentUser||lastPage<=1;
     deleteButton.title='Delete page '+page;
+    deleteButton.disabled=!currentUser||lastPage<=1;
+
+    clearButton.onclick=()=>window.convoClearPageImages(page);
     deleteButton.onclick=()=>window.convoDeletePage(page);
 
-    row.append(selectButton,deleteButton);
+    row.append(selectButton,clearButton,deleteButton);
     messagePageMenu.appendChild(row);
   }
 }
 
+window.convoClearPageImages=page=>clearPageImages(page);
 window.convoDeletePage=page=>deleteMessagePage(page);
 
 function closePageMenu(){
@@ -152,6 +162,12 @@ function updatePageControls(){
   renderPageMenu();
   if(btnPagePrev)btnPagePrev.disabled=activePage<=1;
   if(btnPageNext)btnPageNext.disabled=activePage>=lastPage&&lastMessageSignature==='[]';
+  const clearPageButton=$('btnClearPageImages');
+  if(clearPageButton){
+    clearPageButton.hidden=!currentUser;
+    clearPageButton.disabled=!currentUser;
+    clearPageButton.title='Clear images from current message page';
+  }
   const deletePageButton=$('btnDeletePage');
   if(deletePageButton){
     deletePageButton.hidden=!currentUser;
@@ -246,6 +262,35 @@ async function syncActiveMessages(preserveScroll=true){
 }
 
 function startMessageSync(){stopMessageSync();messageSyncTimer=setInterval(()=>syncActiveMessages(true),3000)}
+async function clearPageImages(page){
+  if(!currentUser||!activeChannel)return;
+  const target=Math.max(1,Number(page)||0);
+  if(!target||target>lastPage)return;
+
+  if(!confirm('Clear all images from message page '+target+'? Text and other files will remain.'))return;
+
+  try{
+    const d=await api('/pages/images/clear',{
+      method:'POST',
+      body:JSON.stringify({channel:activeChannel.name,page:target})
+    });
+
+    await loadChannelPages(activeChannel);
+
+    if(activeChannel){
+      await loadActivePage(false);
+    }
+
+    if(Number(d.clearedImages)>0){
+      return;
+    }
+
+    // No images is a normal no-op; do not show an error.
+  }catch(err){
+    console.error('Page image clear failed.',err);
+    alert(err.message||'Unable to clear page images.');
+  }
+}
 async function deleteMessagePage(page){
   if(!currentUser||!activeChannel)return;
   const target=Math.max(1,Number(page)||0);
@@ -370,7 +415,9 @@ async function selectChannel(channelName,reportActivity=true,initialOpen=false){
 btnPagePrev?.addEventListener('click',()=>selectMessagePage(activePage-1));
 btnPageNext?.addEventListener('click',()=>nextMessagePage());
 window.convoDeleteCurrentPage=()=>window.convoDeletePage(activePage);
+window.convoClearCurrentPageImages=()=>window.convoClearPageImages(activePage);
 $('btnDeletePage')?.setAttribute('onclick','window.convoDeleteCurrentPage()');
+$('btnClearPageImages')?.setAttribute('onclick','window.convoClearCurrentPageImages()');
 messagePageIndicator?.addEventListener('click',e=>{e.stopPropagation();togglePageMenu()});
 document.addEventListener('click',e=>{if(!e.target.closest('.message-page-controls'))closePageMenu()});
 window.addEventListener('keydown',e=>{if(e.key==='Escape')closePageMenu()});
