@@ -1730,25 +1730,19 @@ export default {
           const desiredNumber = index + 1;
           if (Number(remainingPage.page_number) === desiredNumber) continue;
 
-          const currentNumber = Number(remainingPage.page_number);
-          const updated = await supabaseFetch(env, "channel_pages", {
+          await supabaseFetch(env, "channel_pages", {
             method: "PATCH",
             query:
               `?id=eq.${encodeURIComponent(remainingPage.id)}&channel_id=eq.${encodeURIComponent(channel.id)}`,
             body: { page_number: desiredNumber },
             headers: { Prefer: "return=minimal" },
           });
-
-          // Keep the local object synchronized for the response/debug path.
-          if (updated === undefined && currentNumber === desiredNumber) continue;
         }
 
         return response({
           ok: true,
           deletedPage: pageNumber,
-          lastPage: pagesAfterDelete.length
-            ? Number(pagesAfterDelete[pagesAfterDelete.length - 1].page_number)
-            : 1,
+          lastPage: Math.max(1, pagesAfterDelete.length),
         });
       }
 
