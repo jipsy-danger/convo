@@ -1667,9 +1667,6 @@ export default {
         (path === "/pages" && request.method === "DELETE") ||
         (path === "/pages/delete" && request.method === "POST")
       ) {
-        if (!["admin", "superadmin"].includes(user.role)) {
-          return error("Forbidden.", 403);
-        }
 
         const deleteBody = request.method === "POST"
           ? await request.json().catch(() => ({}))
