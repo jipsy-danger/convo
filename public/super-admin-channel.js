@@ -252,6 +252,116 @@
     if (isSuperAdmin()) setTimeout(fetchData, 0);
   });
 
+  // Main Convo sidebar: a Super Admin can right-click a channel once
+  // to open the same full channel-settings editor. The browser context menu
+  // is suppressed only for channel rows, not for ordinary users.
+  let sidebarRightClickAt = 0;
+
+  async function openSidebarChannelEditor(row, event) {
+    if (!isSuperAdmin() || !row) return;
+
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    }
+
+    if (Date.now() - sidebarRightClickAt < 450) return;
+    sidebarRightClickAt = Date.now();
+
+    const id = String(row.dataset.channelId || '');
+    const name = String(row.dataset.channelName || '').trim().toLowerCase();
+    const current = state();
+
+    let channel =
+      (Array.isArray(current.currentChannels) ? current.currentChannels : [])
+        .find(item => String(item.id) === id) ||
+      (Array.isArray(current.currentChannels) ? current.currentChannels : [])
+        .find(item => String(item.name).toLowerCase() === name);
+
+    try {
+      // Refresh channel/user metadata without loading message analytics.
+      const [channelData, userData] = await Promise.all([
+        api()('/channels'),
+        api()('/users')
+      ]);
+
+      const freshChannels = Array.isArray(channelData.channels) ? channelData.channels : [];
+      const freshUsers = Array.isArray(userData.users) ? userData.users : [];
+
+      channels = freshChannels;
+      users = freshUsers;
+      loaded = true;
+
+      channel =
+        freshChannels.find(item => String(item.id) === id) ||
+        freshChannels.find(item => String(item.name).toLowerCase() === name) ||
+        channel;
+
+      if (channel) await openEditor(channel);
+    } catch (error) {
+      console.error('Sidebar channel settings failed.', error);
+      if (error?.message) alert(error.message);
+    }
+  }
+
+  function sidebarChannelRowFromEvent(event) {
+    const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+    for (const node of path) {
+      if (node?.nodeType !== 1) continue;
+      const row = node.closest?.('#channelNavList .channel-item-row');
+      if (row) return row;
+    }
+    return event.target?.closest?.('#channelNavList .channel-item-row') || null;
+  }
+
+  // Capture the right mouse button before any normal channel-click handler
+  // can interfere with it.
+  document.addEventListener('pointerdown', event => {
+    if (event.button !== 2 || !isSuperAdmin()) return;
+    const row = sidebarChannelRowFromEvent(event);
+    if (!row) return;
+    openSidebarChannelEditor(row, event);
+  }, true);
+
+  document.addEventListener('contextmenu', event => {
+    if (!isSuperAdmin()) return;
+    const row = sidebarChannelRowFromEvent(event);
+    if (!row) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    if (Date.now() - sidebarRightClickAt < 450) return;
+    openSidebarChannelEditor(row);
+  }, true);
+
+  function decorateSidebarChannelRows() {
+    if (!isSuperAdmin()) return;
+    document.querySelectorAll('#channelNavList .channel-item-row').forEach(row => {
+      const button = row.querySelector('.channel-item');
+      if (!button) return;
+      const text = String(button.textContent || '').trim().replace(/^🔒\s*/, '').replace(/^#\s*/, '').trim();
+      if (!row.dataset.channelId) {
+        const channel = (Array.isArray(state().currentChannels) ? state().currentChannels : [])
+          .find(item => String(item.name).toLowerCase() === text.toLowerCase());
+        if (channel) row.dataset.channelId = String(channel.id);
+      }
+      if (!row.dataset.channelName) row.dataset.channelName = text;
+    });
+  }
+
+  const originalRenderChannels = window.renderChannels;
+  if (typeof originalRenderChannels === 'function') {
+    window.renderChannels = (...args) => {
+      const result = originalRenderChannels(...args);
+      decorateSidebarChannelRows();
+      return result;
+    };
+  }
+  setTimeout(decorateSidebarChannelRows, 0);
+
   // Protect keyboard-triggered context menu while the J console is open.
   document.addEventListener('keydown', event => {
     if (!isSuperAdmin() || !panel.classList.contains('open')) return;
