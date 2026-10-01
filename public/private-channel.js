@@ -79,22 +79,36 @@
     return cachedUsers;
   }
 
-  function setCreateMode(privateMode) {
-    const enabled = isSuperAdmin() && privateMode;
+  function setCreateMode(privateMode = false) {
+    const superAdmin = isSuperAdmin();
+    const enabled = superAdmin && Boolean(privateMode);
+
     if (visibilityBlock) {
-      visibilityBlock.hidden = !isSuperAdmin();
+      // Only Super Admins can choose channel visibility.
+      visibilityBlock.hidden = !superAdmin;
+      visibilityBlock.setAttribute("aria-hidden", superAdmin ? "false" : "true");
+      visibilityBlock.style.display = superAdmin ? "" : "none";
     }
+
     if (memberPicker) {
       memberPicker.hidden = !enabled;
+      memberPicker.setAttribute("aria-hidden", enabled ? "false" : "true");
+      memberPicker.style.display = enabled ? "" : "none";
     }
   }
 
   async function prepareCreate() {
+    const superAdmin = isSuperAdmin();
     const publicRadio = document.querySelector('input[name="channelVisibility"][value="public"]');
+    const privateRadio = document.querySelector('input[name="channelVisibility"][value="private"]');
+
+    // Every non-Super Admin channel creation is always public. There is no
+    // visibility choice shown to normal users/admins.
     if (publicRadio) publicRadio.checked = true;
+    if (privateRadio) privateRadio.checked = false;
     setCreateMode(false);
 
-    if (!isSuperAdmin()) return;
+    if (!superAdmin) return;
 
     try {
       const users = await loadEligibleUsers();
@@ -233,6 +247,15 @@
 
   document.querySelectorAll('input[name="channelVisibility"]').forEach((input) => {
     input.addEventListener("change", async () => {
+      if (!isSuperAdmin()) {
+        const publicRadio = document.querySelector('input[name="channelVisibility"][value="public"]');
+        const privateRadio = document.querySelector('input[name="channelVisibility"][value="private"]');
+        if (publicRadio) publicRadio.checked = true;
+        if (privateRadio) privateRadio.checked = false;
+        setCreateMode(false);
+        return;
+      }
+
       setCreateMode(selectedVisibility());
       if (selectedVisibility()) {
         try {
