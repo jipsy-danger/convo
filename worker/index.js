@@ -1414,10 +1414,6 @@ export default {
       }
 
       if (path === "/channels" && request.method === "PUT") {
-        if (!["admin", "superadmin"].includes(user.role)) {
-          return error("Forbidden.", 403);
-        }
-
         const id = String(url.searchParams.get("id") || "").trim();
         if (!id) return error("Channel id is required.");
 
