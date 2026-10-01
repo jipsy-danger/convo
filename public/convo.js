@@ -186,6 +186,8 @@ function updatePageControls(){
   renderPageMenu();
   if(btnPagePrev)btnPagePrev.disabled=activePage<=1;
   if(btnPageNext)btnPageNext.disabled=activePage>=lastPage&&lastMessageSignature==='[]';
+  const deletePageButton=$('btnDeletePage');
+  if(deletePageButton)deletePageButton.disabled=lastPage<=1;
 }
 function saveActivePage(){
   try{if(activeChannel)localStorage.setItem(pageStorageKey(activeChannel),String(activePage))}catch(e){}
