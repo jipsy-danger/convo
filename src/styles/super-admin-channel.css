@@ -191,3 +191,32 @@
   color:#9be7ff;
 }
 .super-channel-settings-actions button:disabled{opacity:.35;cursor:default}
+
+.super-user-action-menu{
+  position:fixed;
+  z-index:1400;
+  min-width:150px;
+  padding:4px;
+  border:1px solid rgba(126,220,255,.25);
+  border-radius:6px;
+  background:#0a0f14;
+  box-shadow:0 16px 45px rgba(0,0,0,.58);
+}
+.super-user-action-menu[hidden]{display:none}
+.super-user-action-menu button{
+  display:block;
+  width:100%;
+  padding:9px 11px;
+  border:1px solid transparent;
+  border-radius:4px;
+  background:transparent;
+  color:#dca0a7;
+  text-align:left;
+  font:600 10px/1 var(--font-mono);
+  cursor:pointer;
+}
+.super-user-action-menu button:hover{
+  border-color:rgba(220,160,167,.22);
+  background:rgba(220,160,167,.07);
+  color:#ffc1c7;
+}
