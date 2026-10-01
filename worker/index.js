@@ -1572,6 +1572,20 @@ export default {
           }
           pages = await getChannelPages(env, channel.id);
         }
+
+        // Keep the physical last page for navigation, but separately expose
+        // the latest page that actually contains a message.
+        const latestMessageRows = await supabaseFetch(env, "messages", {
+          query:
+            `?select=page_id,created_at&channel_id=eq.${encodeURIComponent(channel.id)}&page_id=not.is.null&order=created_at.desc&limit=1`,
+        });
+        const latestMessagePageId = Array.isArray(latestMessageRows) && latestMessageRows.length
+          ? String(latestMessageRows[0].page_id)
+          : "";
+        const latestMessagePage = pages.find(
+          (page) => String(page.id) === latestMessagePageId
+        );
+
         return response({
           ok: true,
           pages: pages.map((page) => ({
@@ -1579,9 +1593,9 @@ export default {
             startsAt: page.starts_at,
           })),
           lastPage: pages.length ? pages[pages.length - 1].page_number : 1,
+          lastMessagePage: latestMessagePage?.page_number || 1,
         });
       }
-
       if (path === "/pages" && request.method === "POST") {
         const body = await request.json().catch(() => ({}));
         const channelName = String(body.channel || "").trim().toLowerCase();
