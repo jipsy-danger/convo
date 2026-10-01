@@ -98,6 +98,19 @@ async function loadChannels(preferredName=null,select=true){if(!currentChannels.
 function renderChannels(){const list=$('channelNavList');list.replaceChildren();const canManageChannel=currentUser?.role==='superadmin'||currentUser?.role==='admin';currentChannels.forEach(channel=>{const row=document.createElement('div');row.className='channel-item-row';const b=document.createElement('button');b.type='button';b.className='channel-item'+(activeChannel?.id===channel.id?' active':'');b.textContent=(channel.isPrivate?'🔒 ':'# ')+channel.name;b.title=channel.description||channel.name;b.addEventListener('click',()=>selectChannel(channel.name));row.appendChild(b);if(((currentUser?.role==='superadmin')||(currentUser?.role==='admin'&&!channel.isPrivate))&&channel.name!=='general'){const del=document.createElement('button');del.type='button';del.className='channel-delete';del.setAttribute('aria-label',`Delete #${channel.name}`);del.title=`Delete #${channel.name}`;del.textContent='×';del.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();activeChannel?.id===channel.id?window.deleteCurrentGroup():deleteChannelById(channel.id)});row.appendChild(del)}list.appendChild(row)})}
 function getMessageSignature(messages){return JSON.stringify(messages.map(m=>[m.id,m.channelId,m.userId,m.author,m.role,m.text,m.quotedMessage?.id,m.expiredFileCount,m.isMentioned,m.time||m.createdAt]));}
 function pageStorageKey(channel){return `convo_active_page_${channel?.id||channel?.name||'general'}`;}
+let pageRightClickHandledAt=0;
+
+function triggerPageRightDelete(page,event){
+  if(event){
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+  }
+  pageRightClickHandledAt=Date.now();
+  closePageMenu();
+  deleteMessagePage(page);
+}
+
 function renderPageMenu(){
   if(!messagePageMenu)return;
   messagePageMenu.replaceChildren();
@@ -118,35 +131,39 @@ function renderPageMenu(){
       await selectMessagePage(page);
     });
 
-    // Page deletion is owned by Convo, not the browser context menu.
-    // Bind directly to each page option so the right-click action remains
-    // reliable even when the dropdown is dynamically rebuilt.
+    // Use mousedown as the primary right-click trigger. This fires before
+    // Chrome opens its native context menu and makes the custom action
+    // reliable across the dropdown's dynamically-created buttons.
+    button.addEventListener('mousedown',e=>{
+      if(e.button!==2)return;
+      triggerPageRightDelete(page,e);
+    });
+
+    // Also block the native context menu event. If mousedown already handled
+    // the action, this second event only gets suppressed and does not delete twice.
     button.addEventListener('contextmenu',e=>{
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
-      closePageMenu();
-      deleteMessagePage(page);
+      if(Date.now()-pageRightClickHandledAt<500)return;
+      triggerPageRightDelete(page);
     });
 
     messagePageMenu.appendChild(button);
   }
 }
 
+messagePageIndicator?.addEventListener('mousedown',e=>{
+  if(e.button!==2)return;
+  triggerPageRightDelete(activePage,e);
+});
+
 messagePageIndicator?.addEventListener('contextmenu',e=>{
   e.preventDefault();
   e.stopPropagation();
   e.stopImmediatePropagation();
-  closePageMenu();
-  deleteMessagePage(activePage);
-});
-
-messagePageIndicator?.addEventListener('pointerdown',e=>{
-  if(e.button!==2)return;
-  e.preventDefault();
-  e.stopPropagation();
-  closePageMenu();
-  deleteMessagePage(activePage);
+  if(Date.now()-pageRightClickHandledAt<500)return;
+  triggerPageRightDelete(activePage);
 });
 
 document.querySelector('.message-page-controls')?.addEventListener('contextmenu',e=>{
@@ -158,8 +175,8 @@ document.querySelector('.message-page-controls')?.addEventListener('contextmenu'
   e.preventDefault();
   e.stopPropagation();
   e.stopImmediatePropagation();
-  closePageMenu();
-  deleteMessagePage(activePage);
+  if(Date.now()-pageRightClickHandledAt<500)return;
+  triggerPageRightDelete(activePage);
 });
 
 function closePageMenu(){
