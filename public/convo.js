@@ -365,7 +365,8 @@ async function selectChannel(channelName,reportActivity=true,initialOpen=false){
 }
 btnPagePrev?.addEventListener('click',()=>selectMessagePage(activePage-1));
 btnPageNext?.addEventListener('click',()=>nextMessagePage());
-$('btnDeletePage')?.addEventListener('click',()=>deleteMessagePage(activePage));
+window.convoDeleteCurrentPage=()=>deleteMessagePage(activePage);
+$('btnDeletePage')?.setAttribute('onclick','window.convoDeleteCurrentPage()');
 messagePageIndicator?.addEventListener('click',e=>{e.stopPropagation();togglePageMenu()});
 document.addEventListener('click',e=>{if(!e.target.closest('.message-page-controls'))closePageMenu()});
 window.addEventListener('keydown',e=>{if(e.key==='Escape')closePageMenu()});
