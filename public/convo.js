@@ -119,24 +119,15 @@ function renderPageMenu(){
       await selectMessagePage(page);
     });
 
-    const clearButton=document.createElement('button');
-    clearButton.type='button';
-    clearButton.className='message-page-clear';
-    clearButton.textContent='Clear';
-    clearButton.title='Clear images from page '+page;
-    clearButton.disabled=!currentUser;
-
     const deleteButton=document.createElement('button');
     deleteButton.type='button';
     deleteButton.className='message-page-delete';
     deleteButton.textContent='Delete';
     deleteButton.title='Delete page '+page;
     deleteButton.disabled=!currentUser||lastPage<=1;
-
-    clearButton.onclick=()=>window.convoClearPageImages(page);
     deleteButton.onclick=()=>window.convoDeletePage(page);
 
-    row.append(selectButton,clearButton,deleteButton);
+    row.append(selectButton,deleteButton);
     messagePageMenu.appendChild(row);
   }
 }
