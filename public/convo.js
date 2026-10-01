@@ -686,7 +686,21 @@ let fileExpiryTimer=setInterval(updateFileExpiryTimers,1000);
 updateFileExpiryTimers();
 
 async function deleteMessage(id){if(!confirm('Delete this message?'))return;try{await api('/messages/delete',{method:'POST',body:JSON.stringify({id})});await syncActiveMessages(true)}catch(err){alert(err.message||'Unable to delete message.')}}
-const messageContextMenu=document.createElement('div');messageContextMenu.className='message-context-menu';messageContextMenu.hidden=true;messageContextMenu.innerHTML='<button type="button" class="message-context-copy">Copy Message</button>';document.body.appendChild(messageContextMenu);let contextCopyText='';function closeMessageContextMenu(){messageContextMenu.hidden=true;contextCopyText=''}async function copyContextMessage(){const text=contextCopyText;if(!text){closeMessageContextMenu();return}try{await navigator.clipboard.writeText(text)}catch{const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{document.execCommand('copy')}catch{}area.remove()}closeMessageContextMenu()}document.addEventListener('contextmenu',event=>{const article=event.target.closest('#messagesFeed .message-card');if(!article)return;const text=article.querySelector('.message-text')?.textContent||'';if(!text)return;event.preventDefault();contextCopyText=text;messageContextMenu.hidden=false;const w=132,h=42,left=Math.min(event.clientX,innerWidth-w-8),top=Math.min(event.clientY,innerHeight-h-8);messageContextMenu.style.left=`${Math.max(8,left)}px`;messageContextMenu.style.top=`${Math.max(8,top)}px`});messageContextMenu.querySelector('.message-context-copy').addEventListener('click',copyContextMessage);document.addEventListener('click',e=>{if(!messageContextMenu.contains(e.target))closeMessageContextMenu()});window.addEventListener('keydown',e=>{if(e.key==='Escape')closeMessageContextMenu()});window.addEventListener('scroll',closeMessageContextMenu,true);window.addEventListener('resize',closeMessageContextMenu);window.handlePostMessage=async function(){
+const messageContextMenu=document.createElement('div');messageContextMenu.className='message-context-menu';messageContextMenu.hidden=true;messageContextMenu.innerHTML='<button type="button" class="message-context-copy">Copy Message</button>';document.body.appendChild(messageContextMenu);let contextCopyText='';function closeMessageContextMenu(){messageContextMenu.hidden=true;contextCopyText=''}async function copyContextMessage(){const text=contextCopyText;if(!text){closeMessageContextMenu();return}try{await navigator.clipboard.writeText(text)}catch{const area=document.createElement('textarea');area.value=text;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();try{document.execCommand('copy')}catch{}area.remove()}closeMessageContextMenu()}document.addEventListener('contextmenu',event=>{
+  const article=event.target.closest('#messagesFeed .message-card');
+  if(!article)return;
+  event.preventDefault();
+  event.stopPropagation();
+  const text=article.querySelector('.message-text')?.textContent||'';
+  if(!text){closeMessageContextMenu();return;}
+  contextCopyText=text;
+  messageContextMenu.hidden=false;
+  const w=132,h=42;
+  const left=Math.min(event.clientX,innerWidth-w-8);
+  const top=Math.min(event.clientY,innerHeight-h-8);
+  messageContextMenu.style.left=`${Math.max(8,left)}px`;
+  messageContextMenu.style.top=`${Math.max(8,top)}px`;
+});messageContextMenu.querySelector('.message-context-copy').addEventListener('click',copyContextMessage);document.addEventListener('click',e=>{if(!messageContextMenu.contains(e.target))closeMessageContextMenu()});window.addEventListener('keydown',e=>{if(e.key==='Escape')closeMessageContextMenu()});window.addEventListener('scroll',closeMessageContextMenu,true);window.addEventListener('resize',closeMessageContextMenu);window.handlePostMessage=async function(){
   if(!currentUser||!activeChannel||postingMessage)return;
   const input=$('msgInput');
   const text=input.value.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
