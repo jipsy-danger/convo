@@ -1207,46 +1207,6 @@ export default {
         if (!channel) return error("Channel not found.", 404);
         await requireChannelAccess(env, user, channel);
 
-        const requestedMentionIds = [...new Set(
-          (Array.isArray(body.mentions) ? body.mentions : [])
-            .map((id) => String(id).trim())
-            .filter(Boolean)
-        )].filter((id) => id !== String(user.id));
-
-        let allowedMentionIds = new Set();
-        if (requestedMentionIds.length) {
-          const allMentionUsers = await supabaseGetAll(env, "users", "id,name,role");
-          if (channel.is_private) {
-            const memberships = await supabaseFetch(env, "channel_members", {
-              query:
-                "?select=user_id&channel_id=eq." +
-                encodeURIComponent(channel.id) +
-                "&limit=1000",
-            });
-            const memberIds = new Set(
-              (Array.isArray(memberships) ? memberships : []).map((row) => String(row.user_id))
-            );
-            allowedMentionIds = new Set(
-              (Array.isArray(allMentionUsers) ? allMentionUsers : [])
-                .filter(
-                  (candidate) =>
-                    candidate.role === "superadmin" ||
-                    memberIds.has(String(candidate.id))
-                )
-                .map((candidate) => String(candidate.id))
-            );
-          } else {
-            allowedMentionIds = new Set(
-              (Array.isArray(allMentionUsers) ? allMentionUsers : [])
-                .map((candidate) => String(candidate.id))
-            );
-          }
-
-          if (requestedMentionIds.some((id) => !allowedMentionIds.has(id))) {
-            return error("One or more mention targets are not available in this channel.", 400);
-          }
-        }
-
         const joined = await ensureChannelMember(env, channel.id, user.id);
         if (joined) await recordActivitySafe(env, user, channel.id, "JOINED");
 
@@ -1816,6 +1776,45 @@ export default {
         const channel = await getChannelByName(env, channelName);
         if (!channel) return error("Channel not found.", 404);
         await requireChannelAccess(env, user, channel);
+
+        const requestedMentionIds = [...new Set(
+          (Array.isArray(body.mentions) ? body.mentions : [])
+            .map((id) => String(id).trim())
+            .filter(Boolean)
+        )].filter((id) => id !== String(user.id));
+
+        let allowedMentionIds = new Set();
+        if (requestedMentionIds.length) {
+          const mentionUsers = await supabaseGetAll(env, "users", "id,name,role");
+          if (channel.is_private) {
+            const memberships = await supabaseFetch(env, "channel_members", {
+              query:
+                "?select=user_id&channel_id=eq." +
+                encodeURIComponent(channel.id) +
+                "&limit=1000",
+            });
+            const memberIds = new Set(
+              (Array.isArray(memberships) ? memberships : []).map((row) => String(row.user_id))
+            );
+            allowedMentionIds = new Set(
+              (Array.isArray(mentionUsers) ? mentionUsers : [])
+                .filter(
+                  (candidate) =>
+                    candidate.role === "superadmin" ||
+                    memberIds.has(String(candidate.id))
+                )
+                .map((candidate) => String(candidate.id))
+            );
+          } else {
+            allowedMentionIds = new Set(
+              (Array.isArray(mentionUsers) ? mentionUsers : []).map((candidate) => String(candidate.id))
+            );
+          }
+
+          if (requestedMentionIds.some((id) => !allowedMentionIds.has(id))) {
+            return error("One or more mention targets are not available in this channel.", 400);
+          }
+        }
 
         const joined = await ensureChannelMember(env, channel.id, user.id);
         if (joined) await recordActivitySafe(env, user, channel.id, "JOINED");
