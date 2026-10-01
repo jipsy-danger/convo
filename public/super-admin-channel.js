@@ -269,15 +269,16 @@
     if (Date.now() - sidebarRightClickAt < 450) return;
     sidebarRightClickAt = Date.now();
 
-    const id = String(row.dataset.channelId || '');
-    const name = String(row.dataset.channelName || '').trim().toLowerCase();
-    const current = state();
+    const button = row.querySelector('.channel-item');
+    const name = String(button?.textContent || '')
+      .replace(/^🔒\s*/, '')
+      .replace(/^#\s*/, '')
+      .trim()
+      .toLowerCase();
 
-    let channel =
-      (Array.isArray(current.currentChannels) ? current.currentChannels : [])
-        .find(item => String(item.id) === id) ||
-      (Array.isArray(current.currentChannels) ? current.currentChannels : [])
-        .find(item => String(item.name).toLowerCase() === name);
+    const current = state();
+    let channel = (Array.isArray(current.currentChannels) ? current.currentChannels : [])
+      .find(item => String(item.name).toLowerCase() === name);
 
     try {
       // Refresh channel/user metadata without loading message analytics.
@@ -294,7 +295,6 @@
       loaded = true;
 
       channel =
-        freshChannels.find(item => String(item.id) === id) ||
         freshChannels.find(item => String(item.name).toLowerCase() === name) ||
         channel;
 
@@ -336,31 +336,6 @@
     if (Date.now() - sidebarRightClickAt < 450) return;
     openSidebarChannelEditor(row);
   }, true);
-
-  function decorateSidebarChannelRows() {
-    if (!isSuperAdmin()) return;
-    document.querySelectorAll('#channelNavList .channel-item-row').forEach(row => {
-      const button = row.querySelector('.channel-item');
-      if (!button) return;
-      const text = String(button.textContent || '').trim().replace(/^🔒\s*/, '').replace(/^#\s*/, '').trim();
-      if (!row.dataset.channelId) {
-        const channel = (Array.isArray(state().currentChannels) ? state().currentChannels : [])
-          .find(item => String(item.name).toLowerCase() === text.toLowerCase());
-        if (channel) row.dataset.channelId = String(channel.id);
-      }
-      if (!row.dataset.channelName) row.dataset.channelName = text;
-    });
-  }
-
-  const originalRenderChannels = window.renderChannels;
-  if (typeof originalRenderChannels === 'function') {
-    window.renderChannels = (...args) => {
-      const result = originalRenderChannels(...args);
-      decorateSidebarChannelRows();
-      return result;
-    };
-  }
-  setTimeout(decorateSidebarChannelRows, 0);
 
   // Protect keyboard-triggered context menu while the J console is open.
   document.addEventListener('keydown', event => {
