@@ -1,7 +1,22 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Convo • Command Deck</title><style>
 :root{color-scheme:dark;--bg:#03070d;--panel:rgba(8,20,32,.72);--line:rgba(56,189,248,.18);--cyan:#67dfff;--muted:#7891a5}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 0,#08223a 0,transparent 42%),#03070d;color:#e9f8ff;font:14px system-ui,sans-serif}main{max-width:1250px;margin:auto;padding:32px 22px}.top{display:flex;justify-content:space-between;gap:20px;align-items:end;margin-bottom:22px}.eyebrow{font:11px ui-monospace,monospace;letter-spacing:.22em;color:var(--cyan)}h1{margin:5px 0;font-size:30px;letter-spacing:.03em}.sub{color:var(--muted)}button{border:1px solid var(--line);background:#071522;color:var(--cyan);padding:9px 14px;border-radius:3px;cursor:pointer}button:hover{border-color:var(--cyan)}.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px}.stat,.panel{background:var(--panel);border:1px solid var(--line);box-shadow:0 0 30px rgba(0,150,255,.05)}.stat{padding:15px}.stat span{display:block;color:var(--muted);font:10px ui-monospace,monospace;letter-spacing:.15em}.stat strong{display:block;margin-top:7px;font-size:26px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.panel-title{padding:13px 15px;border-bottom:1px solid var(--line);font:11px ui-monospace,monospace;letter-spacing:.17em;color:var(--cyan)}.table-wrap{overflow:auto;max-height:520px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06);white-space:nowrap}th{color:var(--muted);font-size:11px;font-weight:500}td{font-size:13px}.pill{padding:3px 7px;border:1px solid var(--line);border-radius:20px;font:10px ui-monospace,monospace}.state{padding:70px 20px;text-align:center;color:var(--muted)}@media(max-width:900px){.stats{grid-template-columns:repeat(3,1fr)}.grid{grid-template-columns:1fr}}@media(max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}.top{align-items:start;flex-direction:column}}
-</style></head><body><main><div class="top"><div><div class="eyebrow">CONVO / SUPER ADMIN</div><h1>COMMAND DECK</h1><div class="sub">User and channel activity overview</div></div><button id="refresh">REFRESH</button></div><section class="stats"><div class="stat"><span>USERS</span><strong id="users">—</strong></div><div class="stat"><span>ADMINS</span><strong id="admins">—</strong></div><div class="stat"><span>CHANNELS</span><strong id="channels">—</strong></div><div class="stat"><span>ACTIVE USERS</span><strong id="activeUsers">—</strong></div><div class="stat"><span>ACTIVE CHANNELS</span><strong id="activeChannels">—</strong></div><div class="stat"><span>MESSAGES</span><strong id="messages">—</strong></div></section><section class="grid"><div class="panel"><div class="panel-title">USER ACTIVITY</div><div class="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Channels</th><th>Messages</th><th>Last activity</th></tr></thead><tbody id="userRows"><tr><td colspan="5" class="state">Loading...</td></tr></tbody></table></div></div><div class="panel"><div class="panel-title">CHANNEL ACTIVITY</div><div class="table-wrap"><table><thead><tr><th>Channel</th><th>Users</th><th>Messages</th><th>Last activity</th></tr></thead><tbody id="channelRows"><tr><td colspan="4" class="state">Loading...</td></tr></tbody></table></div></div></section></main><script>
+.editable-channel-row{cursor:pointer;transition:background .15s ease}.editable-channel-row:hover{background:rgba(0,180,255,.05)}.editable-channel-row::after{content:'DOUBLE-CLICK TO EDIT';float:right;color:#4b6979;font:8px ui-monospace,monospace;letter-spacing:.08em;margin-left:10px}.modal-backdrop{position:fixed;inset:0;display:grid;place-items:center;padding:20px;background:rgba(0,0,0,.72);backdrop-filter:blur(8px);z-index:50}.modal-backdrop[hidden]{display:none}.editor{width:min(540px,100%);max-height:min(720px,calc(100vh - 40px));overflow:auto;background:#071019;border:1px solid rgba(90,190,240,.25);box-shadow:0 25px 80px rgba(0,0,0,.6);border-radius:6px}.editor-head{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:15px 17px;border-bottom:1px solid rgba(255,255,255,.07)}.editor-head strong{font:12px ui-monospace,monospace;color:var(--cyan);letter-spacing:.12em}.editor-head button{padding:5px 8px}.editor-body{padding:17px;display:grid;gap:14px}.editor-label{display:grid;gap:6px;color:var(--muted);font:10px ui-monospace,monospace;letter-spacing:.1em}.editor-input,.editor-textarea{width:100%;box-sizing:border-box;background:#040a0f;color:#dce8ef;border:1px solid rgba(255,255,255,.1);border-radius:4px;padding:10px 11px;font:13px system-ui,sans-serif;outline:none}.editor-textarea{min-height:82px;resize:vertical}.editor-input:focus,.editor-textarea:focus{border-color:rgba(90,190,240,.55)}.editor-input:disabled{opacity:.45}.visibility{display:flex;gap:8px}.visibility button{flex:1}.visibility button.active{border-color:var(--cyan);background:#0b2030}.member-box{display:grid;gap:7px;max-height:220px;overflow:auto;padding:7px;border:1px solid rgba(255,255,255,.07);border-radius:4px}.member-option{display:flex;align-items:center;gap:9px;padding:8px;border-radius:4px;color:#c9d6de;font:12px system-ui,sans-serif}.member-option:hover{background:rgba(255,255,255,.03)}.member-option input{accent-color:#43c7ee}.editor-foot{display:flex;justify-content:flex-end;gap:8px;padding:13px 17px;border-top:1px solid rgba(255,255,255,.07)}.editor-error{min-height:16px;color:#e58f99;font:11px system-ui,sans-serif}.editor-note{color:#60727f;font:10px ui-monospace,monospace;line-height:1.5}</style></head><body><main><div class="top"><div><div class="eyebrow">CONVO / SUPER ADMIN</div><h1>COMMAND DECK</h1><div class="sub">User and channel activity overview</div></div><button id="refresh">REFRESH</button></div><section class="stats"><div class="stat"><span>USERS</span><strong id="users">—</strong></div><div class="stat"><span>ADMINS</span><strong id="admins">—</strong></div><div class="stat"><span>CHANNELS</span><strong id="channels">—</strong></div><div class="stat"><span>ACTIVE USERS</span><strong id="activeUsers">—</strong></div><div class="stat"><span>ACTIVE CHANNELS</span><strong id="activeChannels">—</strong></div><div class="stat"><span>MESSAGES</span><strong id="messages">—</strong></div></section><section class="grid"><div class="panel"><div class="panel-title">USER ACTIVITY</div><div class="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Channels</th><th>Messages</th><th>Last activity</th></tr></thead><tbody id="userRows"><tr><td colspan="5" class="state">Loading...</td></tr></tbody></table></div></div><div class="panel"><div class="panel-title">CHANNEL ACTIVITY</div><div class="table-wrap"><table><thead><tr><th>Channel</th><th>Users</th><th>Messages</th><th>Last activity</th></tr></thead><tbody id="channelRows"><tr><td colspan="4" class="state">Loading...</td></tr></tbody></table></div></div></section></main>
+<div id="channelEditorBackdrop" class="modal-backdrop" hidden>
+  <div class="editor" role="dialog" aria-modal="true" aria-labelledby="channelEditorTitle">
+    <div class="editor-head"><strong id="channelEditorTitle">CHANNEL SETTINGS</strong><button id="channelEditorClose" type="button" aria-label="Close">×</button></div>
+    <form id="channelEditorForm">
+      <div class="editor-body">
+        <label class="editor-label">CHANNEL NAME<input id="channelEditorName" class="editor-input" maxlength="40" autocomplete="off"></label>
+        <label class="editor-label">DESCRIPTION<textarea id="channelEditorDescription" class="editor-textarea" maxlength="160"></textarea></label>
+        <div class="editor-label">VISIBILITY<div class="visibility"><button id="channelEditorPublic" type="button">PUBLIC</button><button id="channelEditorPrivate" type="button">PRIVATE</button></div></div>
+        <div id="channelEditorMembersBlock" class="editor-label" hidden>PRIVATE MEMBERS<div id="channelEditorMembers" class="member-box"></div><div class="editor-note">Only selected users and Super Admin can use a private channel.</div></div>
+        <div id="channelEditorError" class="editor-error"></div>
+      </div>
+      <div class="editor-foot"><button id="channelEditorCancel" type="button">CANCEL</button><button id="channelEditorSave" type="submit">SAVE SETTINGS</button></div>
+    </form>
+  </div>
+</div><script>
 const API='https://convo-api.atityaramsureshmanickam.workers.dev';
 const pin=localStorage.getItem('convo_active_pin');
 const superAdminSession=localStorage.getItem('convo_superadmin_session')||'';
@@ -9,7 +24,191 @@ const me=JSON.parse(localStorage.getItem('convo_user')||'null');
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=v=>{if(!v)return'—';const d=new Date(v);return Number.isNaN(d.getTime())?'—':d.toLocaleString([], {year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});};
-async function get(path){const headers={'X-Convo-Pin':pin};if(me?.role==='superadmin'&&superAdminSession)headers['X-Convo-SuperAdmin-Session']=superAdminSession;const r=await fetch(API+path,{headers,cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d;}
-async function load(){if(!pin||!me||me.role!=='superadmin'||!superAdminSession){document.body.innerHTML='<main><div class="state">SUPER ADMIN ACCESS REQUIRED.</div></main>';return} $('userRows').innerHTML='<tr><td colspan="5" class="state">Scanning activity...</td></tr>';$('channelRows').innerHTML='<tr><td colspan="4" class="state">Scanning activity...</td></tr>';try{const [ud,cd]=await Promise.all([get('/users'),get('/channels')]);const us=Array.isArray(ud.users)?ud.users:[],cs=Array.isArray(cd.channels)?cd.channels:[];const um=new Map(us.map(u=>[String(u.id),{...u,c:new Set(),m:0,last:null}])),cm=new Map(cs.map(c=>[c.id,{...c,u:new Set(),m:0,last:null}]));let total=0;await Promise.all(cs.map(async c=>{const d=await get('/messages?channel='+encodeURIComponent(c.name));const ms=Array.isArray(d.messages)?d.messages:[],s=cm.get(c.id);s.m=ms.length;total+=ms.length;for(const m of ms){s.u.add(String(m.userId));if(!s.last||new Date(m.time)>new Date(s.last))s.last=m.time;const u=um.get(String(m.userId));if(u){u.c.add(c.id);u.m++;if(!u.last||new Date(m.time)>new Date(u.last))u.last=m.time}}}));$('users').textContent=us.length;$('admins').textContent=us.filter(u=>u.role==='admin'||u.role==='superadmin').length;$('channels').textContent=cs.length;$('activeUsers').textContent=[...um.values()].filter(u=>u.m>0).length;$('activeChannels').textContent=[...cm.values()].filter(c=>c.m>0).length;$('messages').textContent=total;$('userRows').innerHTML=us.slice().sort((a,b)=>(um.get(String(b.id))?.m||0)-(um.get(String(a.id))?.m||0)).map(u=>{const s=um.get(String(u.id));return`<tr><td>${esc(u.name||'Unnamed')}</td><td><span class="pill">${esc(u.role||'user')}</span></td><td>${s.c.size}</td><td>${s.m}</td><td>${fmt(s.last)}</td></tr>`}).join('')||'<tr><td colspan="5" class="state">No users.</td></tr>';$('channelRows').innerHTML=cs.slice().sort((a,b)=>(cm.get(b.id)?.m||0)-(cm.get(a.id)?.m||0)).map(c=>{const s=cm.get(c.id);return`<tr><td># ${esc(c.name)}</td><td>${s.u.size}</td><td>${s.m}</td><td>${fmt(s.last)}</td></tr>`}).join('')||'<tr><td colspan="4" class="state">No channels.</td></tr>'}catch(e){$('userRows').innerHTML='<tr><td colspan="5" class="state">Analytics unavailable: '+esc(e.message)+'</td></tr>';$('channelRows').innerHTML='<tr><td colspan="4" class="state">Check API access and refresh.</td></tr>'}}
-$('refresh').onclick=load;load();
-</script></body></html>
+
+let channelCache=[];
+let userCache=[];
+let editingChannel=null;
+let editorIsPrivate=false;
+
+async function get(path,options={}){
+  const headers={'X-Convo-Pin':pin,...(options.headers||{})};
+  if(me?.role==='superadmin'&&superAdminSession)headers['X-Convo-SuperAdmin-Session']=superAdminSession;
+  const r=await fetch(API+path,{...options,headers,cache:'no-store'});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok)throw Error(d.error||'Request failed');
+  return d;
+}
+
+function setEditorError(message=''){ $('channelEditorError').textContent=message; }
+
+function setEditorVisibility(isPrivate){
+  editorIsPrivate=Boolean(isPrivate);
+  $('channelEditorPublic').classList.toggle('active',!editorIsPrivate);
+  $('channelEditorPrivate').classList.toggle('active',editorIsPrivate);
+  $('channelEditorMembersBlock').hidden=!editorIsPrivate;
+}
+
+function renderEditorMembers(selectedIds=[]){
+  const box=$('channelEditorMembers');
+  const selected=new Set(selectedIds.map(String));
+  const candidates=userCache.filter(u=>u.role!=='superadmin');
+  if(!candidates.length){box.innerHTML='<div class="editor-note">No eligible users.</div>';return;}
+  box.innerHTML=candidates.map(u=>`<label class="member-option"><input type="checkbox" value="${esc(u.id)}" ${selected.has(String(u.id))?'checked':''}><span>${esc(u.name||'Unnamed')}</span><span class="editor-note">${esc(u.role||'user')}</span></label>`).join('');
+}
+
+async function loadEditorMembers(channel){
+  if(!channel.isPrivate)return [];
+  try{
+    const d=await get('/channels/members?channel='+encodeURIComponent(channel.id));
+    return (Array.isArray(d.users)?d.users:[]).filter(u=>u.selected).map(u=>String(u.id));
+  }catch(error){
+    setEditorError(error.message||'Unable to load channel members.');
+    return [];
+  }
+}
+
+async function openChannelEditor(channel){
+  if(me?.role!=='superadmin'||!superAdminSession)return;
+  editingChannel=channel;
+  $('channelEditorTitle').textContent='CHANNEL SETTINGS / # '+channel.name;
+  $('channelEditorName').value=channel.name||'';
+  $('channelEditorDescription').value=channel.description||'';
+  $('channelEditorName').disabled=channel.name==='general';
+  $('channelEditorSave').disabled=false;
+  $('channelEditorSave').textContent='SAVE SETTINGS';
+  setEditorError('');
+  $('channelEditorBackdrop').hidden=false;
+  $('channelEditorBackdrop').removeAttribute('hidden');
+
+  if(channel.name==='general'){
+    setEditorVisibility(false);
+    $('channelEditorPublic').disabled=true;
+    $('channelEditorPrivate').disabled=true;
+    $('channelEditorMembersBlock').hidden=true;
+    $('channelEditorDescription').focus();
+    return;
+  }
+
+  $('channelEditorPublic').disabled=false;
+  $('channelEditorPrivate').disabled=false;
+  const selected=await loadEditorMembers(channel);
+  renderEditorMembers(selected);
+  setEditorVisibility(Boolean(channel.isPrivate));
+  $('channelEditorName').focus();
+}
+
+function closeChannelEditor(){ editingChannel=null; setEditorError(''); $('channelEditorBackdrop').hidden=true; }
+
+async function saveChannelEditor(event){
+  event.preventDefault();
+  if(me?.role!=='superadmin'||!editingChannel)return;
+
+  const name=$('channelEditorName').value.trim();
+  const description=$('channelEditorDescription').value.trim();
+  const memberIds=[...document.querySelectorAll('#channelEditorMembers input[type=checkbox]:checked')].map(input=>input.value);
+
+  if(editorIsPrivate&&!memberIds.length){
+    setEditorError('Select at least one user for a private channel.');
+    return;
+  }
+
+  $('channelEditorSave').disabled=true;
+  $('channelEditorSave').textContent='SAVING...';
+  setEditorError('');
+
+  try{
+    await get('/channels?id='+encodeURIComponent(editingChannel.id),{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name,description,isPrivate:editorIsPrivate,memberIds})
+    });
+    closeChannelEditor();
+    await load();
+  }catch(error){
+    setEditorError(error.message||'Unable to save channel settings.');
+  }finally{
+    $('channelEditorSave').disabled=false;
+    $('channelEditorSave').textContent='SAVE SETTINGS';
+  }
+}
+
+function bindChannelRows(){
+  document.querySelectorAll('#channelRows tr[data-channel-id]').forEach(row=>{
+    row.classList.add('editable-channel-row');
+    row.addEventListener('dblclick',()=>{
+      const channel=channelCache.find(item=>String(item.id)===String(row.dataset.channelId));
+      if(channel)openChannelEditor(channel);
+    });
+  });
+}
+
+async function load(){
+  if(!pin||!me||me.role!=='superadmin'||!superAdminSession){
+    document.body.innerHTML='<main><div class="state">SUPER ADMIN ACCESS REQUIRED.</div></main>';
+    return;
+  }
+
+  $('userRows').innerHTML='<tr><td colspan="5" class="state">Scanning activity...</td></tr>';
+  $('channelRows').innerHTML='<tr><td colspan="4" class="state">Scanning activity...</td></tr>';
+
+  try{
+    const [ud,cd]=await Promise.all([get('/users'),get('/channels')]);
+    const us=Array.isArray(ud.users)?ud.users:[];
+    const cs=Array.isArray(cd.channels)?cd.channels:[];
+    userCache=us;
+    channelCache=cs;
+
+    const um=new Map(us.map(u=>[String(u.id),{...u,c:new Set(),m:0,last:null}]));
+    const cm=new Map(cs.map(ch=>[ch.id,{...ch,u:new Set(),m:0,last:null}]));
+    let total=0;
+
+    await Promise.all(cs.map(async ch=>{
+      const d=await get('/messages?channel='+encodeURIComponent(ch.name));
+      const ms=Array.isArray(d.messages)?d.messages:[];
+      const st=cm.get(ch.id);
+      st.m=ms.length;
+      total+=ms.length;
+      for(const m of ms){
+        st.u.add(String(m.userId));
+        if(!st.last||new Date(m.time)>new Date(st.last))st.last=m.time;
+        const u=um.get(String(m.userId));
+        if(u){
+          u.c.add(ch.id);
+          u.m++;
+          if(!u.last||new Date(m.time)>new Date(u.last))u.last=m.time;
+        }
+      }
+    }));
+
+    $('users').textContent=us.length;
+    $('admins').textContent=us.filter(u=>u.role==='admin'||u.role==='superadmin').length;
+    $('channels').textContent=cs.length;
+    $('activeUsers').textContent=[...um.values()].filter(u=>u.m>0).length;
+    $('activeChannels').textContent=[...cm.values()].filter(ch=>ch.m>0).length;
+    $('messages').textContent=total;
+
+    $('userRows').innerHTML=us.slice().sort((a,b)=>(um.get(String(b.id))?.m||0)-(um.get(String(a.id))?.m||0)).map(u=>{
+      const st=um.get(String(u.id));
+      return `<tr><td>${esc(u.name||'Unnamed')}</td><td><span class="pill">${esc(u.role||'user')}</span></td><td>${st.c.size}</td><td>${st.m}</td><td>${fmt(st.last)}</td></tr>`;
+    }).join('')||'<tr><td colspan="5" class="state">No users.</td></tr>';
+
+    $('channelRows').innerHTML=cs.slice().sort((a,b)=>(cm.get(b.id)?.m||0)-(cm.get(a.id)?.m||0)).map(ch=>{
+      const st=cm.get(ch.id);
+      return `<tr data-channel-id="${esc(ch.id)}"><td>${ch.isPrivate?'🔒 ':'# '}${esc(ch.name)}</td><td>${st.u.size}</td><td>${st.m}</td><td>${fmt(st.last)}</td></tr>`;
+    }).join('')||'<tr><td colspan="4" class="state">No channels.</td></tr>';
+
+    bindChannelRows();
+  }catch(e){
+    $('userRows').innerHTML='<tr><td colspan="5" class="state">Analytics unavailable: '+esc(e.message)+'</td></tr>';
+    $('channelRows').innerHTML='<tr><td colspan="4" class="state">Check API access and refresh.</td></tr>';
+  }
+}
+
+$('channelEditorClose').onclick=closeChannelEditor;
+$('channelEditorCancel').onclick=closeChannelEditor;
+$('channelEditorForm').onsubmit=saveChannelEditor;
+$('channelEditorPublic').onclick=()=>setEditorVisibility(false);
+$('channelEditorPrivate').onclick=()=>setEditorVisibility(true);
+$('channelEditorBackdrop').addEventListener('click',e=>{if(e.target===$('channelEditorBackdrop'))closeChannelEditor()});
+$('refresh').onclick=load;
+load();</script></body></html>
