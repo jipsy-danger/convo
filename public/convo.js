@@ -124,16 +124,15 @@ function renderPageMenu(){
     deleteButton.className='message-page-delete';
     deleteButton.textContent='Delete';
     deleteButton.disabled=!currentUser||lastPage<=1;
-    deleteButton.addEventListener('click',async e=>{
-      e.preventDefault();
-      e.stopPropagation();
-      await deleteMessagePage(page);
-    });
+    deleteButton.title='Delete page '+page;
+    deleteButton.onclick=()=>window.convoDeletePage(page);
 
     row.append(selectButton,deleteButton);
     messagePageMenu.appendChild(row);
   }
 }
+
+window.convoDeletePage=page=>deleteMessagePage(page);
 
 function closePageMenu(){
   if(!messagePageMenu)return;
@@ -248,13 +247,21 @@ async function syncActiveMessages(preserveScroll=true){
 
 function startMessageSync(){stopMessageSync();messageSyncTimer=setInterval(()=>syncActiveMessages(true),3000)}
 async function deleteMessagePage(page){
-  if(!currentUser)return;
-  if(!activeChannel||lastPage<=1)return;
+  if(!currentUser||!activeChannel)return;
   const target=Math.max(1,Number(page)||0);
-  if(!target||target>lastPage)return;
+  if(!target||target>lastPage||lastPage<=1)return;
+
   if(!confirm('Delete message page '+target+'? All messages on this page will also be deleted.'))return;
 
   try{
+    // Refresh the page list immediately before deletion so an old UI state
+    // cannot send an invalid page number.
+    await loadChannelPages(activeChannel);
+    if(target>lastPage){
+      alert('That message page no longer exists.');
+      return;
+    }
+
     const d=await api('/pages/delete',{
       method:'POST',
       body:JSON.stringify({channel:activeChannel.name,page:target})
@@ -263,18 +270,15 @@ async function deleteMessagePage(page){
     const previousLastPage=lastPage;
     lastPage=Math.max(1,Number(d.lastPage)||previousLastPage-1);
 
-    if(activePage>target){
-      activePage=Math.max(1,activePage-1);
-    }else if(activePage===target){
-      // Stay at the same numeric page when a later page moved into it.
-      // If the deleted page was the last one, move to the new last page.
-      activePage=Math.min(target,lastPage);
-    }
+    if(target<activePage)activePage-=1;
+    else if(activePage===target)activePage=Math.min(target,lastPage);
 
     saveActivePage();
     updatePageControls();
+    closePageMenu();
     await loadActivePage(false);
   }catch(err){
+    console.error('Page deletion failed.',err);
     alert(err.message||'Unable to delete this message page.');
   }
 }
@@ -365,7 +369,7 @@ async function selectChannel(channelName,reportActivity=true,initialOpen=false){
 }
 btnPagePrev?.addEventListener('click',()=>selectMessagePage(activePage-1));
 btnPageNext?.addEventListener('click',()=>nextMessagePage());
-window.convoDeleteCurrentPage=()=>deleteMessagePage(activePage);
+window.convoDeleteCurrentPage=()=>window.convoDeletePage(activePage);
 $('btnDeletePage')?.setAttribute('onclick','window.convoDeleteCurrentPage()');
 messagePageIndicator?.addEventListener('click',e=>{e.stopPropagation();togglePageMenu()});
 document.addEventListener('click',e=>{if(!e.target.closest('.message-page-controls'))closePageMenu()});
