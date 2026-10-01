@@ -1667,15 +1667,14 @@ export default {
         (path === "/pages" && request.method === "DELETE") ||
         (path === "/pages/delete" && request.method === "POST")
       ) {
-
-        const deleteBody = request.method === "POST"
+        const body = request.method === "POST"
           ? await request.json().catch(() => ({}))
           : {};
         const channelName = String(
-          request.method === "POST" ? deleteBody.channel : url.searchParams.get("channel") || ""
+          request.method === "POST" ? body.channel : url.searchParams.get("channel") || ""
         ).trim().toLowerCase();
         const pageNumber = Number(
-          request.method === "POST" ? deleteBody.page : url.searchParams.get("page")
+          request.method === "POST" ? body.page : url.searchParams.get("page")
         );
 
         if (!channelName) return error("Channel is required.");
@@ -1691,41 +1690,69 @@ export default {
           query:
             `?select=id,channel_id,page_number&channel_id=eq.${encodeURIComponent(channel.id)}&order=page_number.asc`,
         });
-        if (!Array.isArray(pages) || !pages.length) {
+        if (!Array.isArray(pages) || pages.length === 0) {
           return error("Message page not found.", 404);
         }
-        if (pages.length <= 1) {
+        if (pages.length === 1) {
           return error("The only message page cannot be deleted.", 400);
         }
 
         const targetPage = pages.find((item) => Number(item.page_number) === pageNumber);
         if (!targetPage) return error("Message page not found.", 404);
 
-        // Remove external file objects first. Database rows then cascade
-        // atomically with the page deletion/renumber operation.
         const pageMessages = await supabaseFetch(env, "messages", {
           query:
             `?select=id&channel_id=eq.${encodeURIComponent(channel.id)}&page_id=eq.${encodeURIComponent(targetPage.id)}`,
         });
+
         await deleteAttachmentObjectsForMessages(
           env,
           (Array.isArray(pageMessages) ? pageMessages : []).map((item) => item.id)
         );
 
-        const result = await supabaseFetch(env, "rpc/delete_channel_page", {
-          method: "POST",
-          body: {
-            p_channel_id: channel.id,
-            p_page_number: pageNumber,
-          },
-          headers: { Prefer: "return=representation" },
+        await supabaseFetch(env, "messages", {
+          method: "DELETE",
+          query:
+            `?channel_id=eq.${encodeURIComponent(channel.id)}&page_id=eq.${encodeURIComponent(targetPage.id)}`,
+          headers: { Prefer: "return=minimal" },
         });
 
-        const payload = Array.isArray(result) ? result[0] : result;
+        await supabaseFetch(env, "channel_pages", {
+          method: "DELETE",
+          query:
+            `?id=eq.${encodeURIComponent(targetPage.id)}&channel_id=eq.${encodeURIComponent(channel.id)}`,
+          headers: { Prefer: "return=minimal" },
+        });
+
+        const laterPages = pages
+          .filter((item) => Number(item.page_number) > pageNumber)
+          .sort((a, b) => Number(a.page_number) - Number(b.page_number));
+
+        // Avoid unique(channel_id,page_number) collisions.
+        for (const page of laterPages) {
+          await supabaseFetch(env, "channel_pages", {
+            method: "PATCH",
+            query:
+              `?id=eq.${encodeURIComponent(page.id)}&channel_id=eq.${encodeURIComponent(channel.id)}`,
+            body: { page_number: 1000000 + Number(page.page_number) },
+            headers: { Prefer: "return=minimal" },
+          });
+        }
+
+        for (const page of laterPages) {
+          await supabaseFetch(env, "channel_pages", {
+            method: "PATCH",
+            query:
+              `?id=eq.${encodeURIComponent(page.id)}&channel_id=eq.${encodeURIComponent(channel.id)}`,
+            body: { page_number: Number(page.page_number) - 1 },
+            headers: { Prefer: "return=minimal" },
+          });
+        }
+
         return response({
           ok: true,
           deletedPage: pageNumber,
-          lastPage: Number(payload?.lastPage) || Math.max(1, pages.length - 1),
+          lastPage: pages.length - 1,
         });
       }
 
