@@ -111,6 +111,46 @@ function triggerPageRightDelete(page,event){
   deleteMessagePage(page);
 }
 
+function pageControlTarget(event){
+  const path=typeof event.composedPath==='function'?event.composedPath():[];
+  for(const node of path){
+    if(node?.nodeType!==1)continue;
+    if(node.matches?.('.message-page-option'))return {type:'page',page:Number(node.dataset.page)};
+    if(node.id==='messagePageIndicator')return {type:'indicator',page:activePage};
+    if(node.id==='messagePageMenu')return {type:'menu'};
+    if(node.classList?.contains('message-page-controls'))return {type:'controls'};
+  }
+
+  const target=event.target?.closest?.('.message-page-option,#messagePageIndicator,#messagePageMenu,.message-page-controls');
+  if(target?.matches?.('.message-page-option'))return {type:'page',page:Number(target.dataset.page)};
+  if(target?.id==='messagePageIndicator')return {type:'indicator',page:activePage};
+  if(target?.id==='messagePageMenu')return {type:'menu'};
+  if(target?.classList?.contains('message-page-controls'))return {type:'controls'};
+  return null;
+}
+
+function handlePageRightClick(event){
+  const target=pageControlTarget(event);
+  if(!target)return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+
+  if(Date.now()-pageRightClickHandledAt<500)return;
+
+  if(target.type==='page'){
+    triggerPageRightDelete(target.page);
+    return;
+  }
+
+  // Right-clicking the page indicator itself means the currently displayed
+  // page. Container padding is treated the same way for predictable UX.
+  if(target.type==='indicator'||target.type==='controls'){
+    triggerPageRightDelete(activePage);
+  }
+}
+
 function renderPageMenu(){
   if(!messagePageMenu)return;
   messagePageMenu.replaceChildren();
@@ -131,53 +171,26 @@ function renderPageMenu(){
       await selectMessagePage(page);
     });
 
-    // Use mousedown as the primary right-click trigger. This fires before
-    // Chrome opens its native context menu and makes the custom action
-    // reliable across the dropdown's dynamically-created buttons.
-    button.addEventListener('mousedown',e=>{
+    button.addEventListener('pointerdown',e=>{
       if(e.button!==2)return;
-      triggerPageRightDelete(page,e);
+      handlePageRightClick(e);
     });
 
-    // Also block the native context menu event. If mousedown already handled
-    // the action, this second event only gets suppressed and does not delete twice.
-    button.addEventListener('contextmenu',e=>{
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      if(Date.now()-pageRightClickHandledAt<500)return;
-      triggerPageRightDelete(page);
-    });
+    button.addEventListener('contextmenu',e=>handlePageRightClick(e));
 
     messagePageMenu.appendChild(button);
   }
 }
 
-messagePageIndicator?.addEventListener('mousedown',e=>{
-  if(e.button!==2)return;
-  triggerPageRightDelete(activePage,e);
-});
-
-messagePageIndicator?.addEventListener('contextmenu',e=>{
-  e.preventDefault();
-  e.stopPropagation();
-  e.stopImmediatePropagation();
-  if(Date.now()-pageRightClickHandledAt<500)return;
-  triggerPageRightDelete(activePage);
-});
-
-document.querySelector('.message-page-controls')?.addEventListener('contextmenu',e=>{
-  const pageOption=e.target.closest('.message-page-option');
-  const navButton=e.target.closest('.page-nav-btn');
-  if(pageOption||navButton)return;
-
-  if(!e.target.closest('#messagePageIndicator'))return;
-  e.preventDefault();
-  e.stopPropagation();
-  e.stopImmediatePropagation();
-  if(Date.now()-pageRightClickHandledAt<500)return;
-  triggerPageRightDelete(activePage);
-});
+// Capture phase is deliberate: the browser's native context menu must be
+// suppressed before any bubbling listener can reopen it.
+document.addEventListener('contextmenu',handlePageRightClick,true);
+document.addEventListener('pointerdown',event=>{
+  if(event.button!==2)return;
+  const target=pageControlTarget(event);
+  if(!target)return;
+  handlePageRightClick(event);
+},true);
 
 function closePageMenu(){
   if(!messagePageMenu)return;
