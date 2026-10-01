@@ -2000,6 +2000,49 @@ export default {
         });
       }
 
+      if (path === "/notifications" && request.method === "GET") {
+        const onlyUnread = String(url.searchParams.get("unread") || "") === "1";
+        const type = String(url.searchParams.get("type") || "").trim();
+        let query =
+          "?select=id,type,body,message_id,conversation_id,channel_id,read_at,created_at" +
+          "&user_id=eq." +
+          encodeURIComponent(user.id) +
+          "&order=created_at.asc&limit=50";
+        if (type) query += "&type=eq." + encodeURIComponent(type);
+        if (onlyUnread) query += "&read_at=is.null";
+
+        const notifications = await supabaseFetch(env, "notifications", { query });
+        return response({
+          ok: true,
+          notifications: Array.isArray(notifications) ? notifications : [],
+        });
+      }
+
+      if (path === "/notifications/read" && request.method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const ids = [...new Set(
+          (Array.isArray(body.ids) ? body.ids : [])
+            .map((id) => String(id).trim())
+            .filter(Boolean)
+        )];
+
+        if (ids.length) {
+          await supabaseFetch(env, "notifications", {
+            method: "PATCH",
+            query:
+              "?user_id=eq." +
+              encodeURIComponent(user.id) +
+              "&id=in.(" +
+              ids.map((id) => encodeURIComponent(id)).join(",") +
+              ")",
+            body: { read_at: new Date().toISOString() },
+            headers: { Prefer: "return=minimal" },
+          });
+        }
+
+        return response({ ok: true });
+      }
+
       if (path === "/activity" && request.method === "POST") {
         const body = await request.json().catch(() => ({}));
         const action = String(body.action || "VIEWED").toUpperCase();
