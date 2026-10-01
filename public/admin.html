@@ -135,27 +135,59 @@ async function saveChannelEditor(event){
 function bindChannelRows(){
   document.querySelectorAll('#channelRows tr[data-channel-id]').forEach(row=>{
     row.classList.add('editable-channel-row');
-
-    const openForRow=()=>{
-      const channel=channelCache.find(item=>String(item.id)===String(row.dataset.channelId));
-      if(channel)openChannelEditor(channel);
-    };
-
-    row.addEventListener('contextmenu',event=>{
-      event.preventDefault();
-      event.stopPropagation();
-      openForRow();
-    });
-
-    // Fallback for browsers that dispatch the native menu before bubbling.
-    row.addEventListener('mousedown',event=>{
-      if(event.button!==2)return;
-      event.preventDefault();
-      event.stopPropagation();
-      openForRow();
-    });
   });
 }
+
+// Super Admin Command Deck owns the right-click interaction.
+// The browser context menu is blocked everywhere on this console.
+// A single right-click on a channel row opens that channel's settings.
+let lastChannelRightOpen=0;
+
+function channelRowFromEvent(event){
+  const path=typeof event.composedPath==='function'?event.composedPath():[];
+  for(const node of path){
+    if(node?.nodeType===1){
+      const row=node.closest?.('#channelRows tr[data-channel-id]');
+      if(row)return row;
+    }
+  }
+  return event.target?.closest?.('#channelRows tr[data-channel-id]')||null;
+}
+
+function openChannelFromRow(row){
+  if(!row)return;
+  const channel=channelCache.find(item=>String(item.id)===String(row.dataset.channelId));
+  if(channel)openChannelEditor(channel);
+}
+
+document.addEventListener('pointerdown',event=>{
+  if(event.button!==2)return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const row=channelRowFromEvent(event);
+  if(!row)return;
+
+  lastChannelRightOpen=Date.now();
+  openChannelFromRow(row);
+},true);
+
+document.addEventListener('contextmenu',event=>{
+  // Never allow the browser context menu anywhere in the Super Admin console.
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+
+  const row=channelRowFromEvent(event);
+  if(!row)return;
+
+  // pointerdown already opened the editor. Avoid opening it twice.
+  if(Date.now()-lastChannelRightOpen<600)return;
+
+  lastChannelRightOpen=Date.now();
+  openChannelFromRow(row);
+},true);
+
 
 async function load(){
   if(!pin||!me||me.role!=='superadmin'||!superAdminSession){
