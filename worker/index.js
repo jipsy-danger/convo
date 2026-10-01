@@ -670,7 +670,7 @@ async function createNextChannelPage(env, channelId) {
   }
 }
 
-async function getMessagesForChannel(env, channelId, pageNumber = null) {
+async function getMessagesForChannel(env, channelId, pageNumber = null, viewerUserId = null) {
   let page = null;
   if (pageNumber !== null) {
     const pages = await supabaseFetch(env, "channel_pages", {
@@ -735,6 +735,20 @@ async function getMessagesForChannel(env, channelId, pageNumber = null) {
       })
     : [];
 
+  const mentionRows = messageIds.length
+    ? await supabaseFetch(env, "message_mentions", {
+        query:
+          "?select=message_id,user_id&message_id=in." +
+          "(" + messageIds.map((id) => encodeURIComponent(id)).join(",") + ")",
+      })
+    : [];
+  const mentionedByMessage = new Map();
+  for (const row of Array.isArray(mentionRows) ? mentionRows : []) {
+    const key = String(row.message_id);
+    if (!mentionedByMessage.has(key)) mentionedByMessage.set(key, new Set());
+    mentionedByMessage.get(key).add(String(row.user_id));
+  }
+
   const attachmentsByMessage = new Map();
   const expiredAttachmentCountByMessage = new Map();
   for (const attachment of Array.isArray(attachments) ? attachments : []) {
@@ -796,6 +810,9 @@ async function getMessagesForChannel(env, channelId, pageNumber = null) {
           : null,
         files,
         expiredFileCount: expiredAttachmentCountByMessage.get(String(message.id)) || 0,
+        isMentioned: viewerUserId
+          ? Boolean(mentionedByMessage.get(String(message.id))?.has(String(viewerUserId)))
+          : false,
         time: message.created_at,
         createdAt: message.created_at,
       };
@@ -1189,6 +1206,46 @@ export default {
         const channel = await getChannelByName(env, channelName);
         if (!channel) return error("Channel not found.", 404);
         await requireChannelAccess(env, user, channel);
+
+        const requestedMentionIds = [...new Set(
+          (Array.isArray(body.mentions) ? body.mentions : [])
+            .map((id) => String(id).trim())
+            .filter(Boolean)
+        )].filter((id) => id !== String(user.id));
+
+        let allowedMentionIds = new Set();
+        if (requestedMentionIds.length) {
+          const allMentionUsers = await supabaseGetAll(env, "users", "id,name,role");
+          if (channel.is_private) {
+            const memberships = await supabaseFetch(env, "channel_members", {
+              query:
+                "?select=user_id&channel_id=eq." +
+                encodeURIComponent(channel.id) +
+                "&limit=1000",
+            });
+            const memberIds = new Set(
+              (Array.isArray(memberships) ? memberships : []).map((row) => String(row.user_id))
+            );
+            allowedMentionIds = new Set(
+              (Array.isArray(allMentionUsers) ? allMentionUsers : [])
+                .filter(
+                  (candidate) =>
+                    candidate.role === "superadmin" ||
+                    memberIds.has(String(candidate.id))
+                )
+                .map((candidate) => String(candidate.id))
+            );
+          } else {
+            allowedMentionIds = new Set(
+              (Array.isArray(allMentionUsers) ? allMentionUsers : [])
+                .map((candidate) => String(candidate.id))
+            );
+          }
+
+          if (requestedMentionIds.some((id) => !allowedMentionIds.has(id))) {
+            return error("One or more mention targets are not available in this channel.", 400);
+          }
+        }
 
         const joined = await ensureChannelMember(env, channel.id, user.id);
         if (joined) await recordActivitySafe(env, user, channel.id, "JOINED");
@@ -1699,7 +1756,7 @@ export default {
 
         const requestedPage = Number(url.searchParams.get("page"));
         const pageNumber = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : null;
-        const messages = await getMessagesForChannel(env, channel.id, pageNumber);
+        const messages = await getMessagesForChannel(env, channel.id, pageNumber, user.id);
 
         if (!isMessageSync) {
           try {
@@ -1784,6 +1841,34 @@ export default {
         });
 
         const message = Array.isArray(inserted) ? inserted[0] : inserted;
+        if (requestedMentionIds.length) {
+          for (const mentionUserId of requestedMentionIds) {
+            try {
+              await supabaseFetch(env, "message_mentions", {
+                method: "POST",
+                body: {
+                  message_id: message.id,
+                  user_id: Number(mentionUserId),
+                },
+                headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },
+              });
+              await supabaseFetch(env, "notifications", {
+                method: "POST",
+                body: {
+                  user_id: Number(mentionUserId),
+                  message_id: message.id,
+                  channel_id: channel.id,
+                  type: "mention",
+                  body: user.name + " mentioned you",
+                },
+                headers: { Prefer: "return=minimal" },
+              });
+            } catch (err) {
+              console.warn("Mention notification persistence failed; message remains posted.", err);
+            }
+          }
+        }
+
         await recordActivitySafe(env, user, channel.id, "POSTED");
 
         let quotedMessage = null;
@@ -1864,6 +1949,55 @@ export default {
 
         await recordActivitySafe(env, user, message.channel_id, "POSTED");
         return response({ ok: true });
+      }
+
+      if (path === "/mentions/users" && request.method === "GET") {
+        const channelName = String(url.searchParams.get("channel") || "").trim().toLowerCase();
+        if (!channelName) return error("Channel is required.");
+        const channel = await getChannelByName(env, channelName);
+        if (!channel) return error("Channel not found.", 404);
+        await requireChannelAccess(env, user, channel);
+
+        const allUsers = await supabaseGetAll(env, "users", "id,name,role");
+        const candidates = Array.isArray(allUsers)
+          ? allUsers.filter((candidate) => String(candidate.id) !== String(user.id))
+          : [];
+
+        if (!channel.is_private) {
+          return response({
+            ok: true,
+            users: candidates.map((candidate) => ({
+              id: candidate.id,
+              name: candidate.name,
+              role: candidate.role,
+            })),
+          });
+        }
+
+        const memberships = await supabaseFetch(env, "channel_members", {
+          query:
+            "?select=user_id&channel_id=eq." +
+            encodeURIComponent(channel.id) +
+            "&limit=1000",
+        });
+        const memberIds = new Set(
+          (Array.isArray(memberships) ? memberships : []).map((row) => String(row.user_id))
+        );
+
+        return response({
+          ok: true,
+          users: candidates
+            .filter(
+              (candidate) =>
+                candidate.role === "superadmin" ||
+                memberIds.has(String(candidate.id))
+            )
+            .map((candidate) => ({
+              id: candidate.id,
+              name: candidate.name,
+              role: candidate.role,
+            })),
+        });
       }
 
       if (path === "/activity" && request.method === "POST") {
