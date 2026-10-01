@@ -63,3 +63,60 @@
 .channel-modal-button:hover{border-color:rgba(100,115,130,.6)!important;color:#f0f3f6!important}
 .channel-modal-button.primary{border-color:rgba(56,189,248,.38)!important;background:#12202a!important;color:#89dcff!important}
 .channel-modal-button:disabled{opacity:.45!important;cursor:default!important}
+
+/* Explicit page management: no right-click is required. */
+.message-page-menu{
+  min-width:96px!important;
+}
+.message-page-row{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) 24px!important;
+  gap:4px!important;
+  align-items:center!important;
+  margin:1px 0!important;
+}
+.message-page-row.active{
+  border-radius:4px!important;
+  background:#14202a!important;
+}
+.message-page-option{
+  width:100%!important;
+  height:27px!important;
+  border:1px solid transparent!important;
+  border-radius:4px!important;
+  background:transparent!important;
+  color:#87939e!important;
+  font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,monospace!important;
+  cursor:pointer!important;
+}
+.message-page-row.active .message-page-option{
+  color:#7edcff!important;
+}
+.message-page-delete{
+  width:22px!important;
+  height:22px!important;
+  display:grid!important;
+  place-items:center!important;
+  padding:0!important;
+  border:1px solid transparent!important;
+  border-radius:4px!important;
+  background:transparent!important;
+  color:#7b5960!important;
+  font-size:14px!important;
+  line-height:1!important;
+  cursor:pointer!important;
+}
+.message-page-row:hover .message-page-delete:not(:disabled){
+  color:#ef969f!important;
+  border-color:rgba(239,150,159,.18)!important;
+  background:rgba(239,150,159,.06)!important;
+}
+.message-page-delete:disabled{
+  opacity:.18!important;
+  cursor:default!important;
+}
+.message-page-delete:focus-visible,
+.message-page-option:focus-visible{
+  outline:1px solid rgba(56,189,248,.55)!important;
+  outline-offset:1px!important;
+}
