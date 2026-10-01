@@ -96,7 +96,7 @@ async function login(){
 window.login=login;
 async function loadChannels(preferredName=null,select=true){if(!currentChannels.length){const cached=readCachedChannels();if(cached.length){currentChannels=cached;renderChannels()}}let networkError=null;try{const d=await api('/channels',{timeoutMs:10000});if(Array.isArray(d.channels)&&d.channels.length){currentChannels=d.channels;writeCachedChannels(currentChannels);renderChannels()}}catch(err){networkError=err;console.warn('Channel sync failed; using cached channels when available.',err)}const targetName=preferredName||activeChannel?.name||'general',target=currentChannels.find(c=>c.name===targetName)||currentChannels[0];if(select&&target)await selectChannel(target.name,false);if(networkError&&!target)throw networkError;return target}
 function renderChannels(){const list=$('channelNavList');list.replaceChildren();const canManageChannel=currentUser?.role==='superadmin'||currentUser?.role==='admin';currentChannels.forEach(channel=>{const row=document.createElement('div');row.className='channel-item-row';const b=document.createElement('button');b.type='button';b.className='channel-item'+(activeChannel?.id===channel.id?' active':'');b.textContent=(channel.isPrivate?'🔒 ':'# ')+channel.name;b.title=channel.description||channel.name;b.addEventListener('click',()=>selectChannel(channel.name));row.appendChild(b);if(((currentUser?.role==='superadmin')||(currentUser?.role==='admin'&&!channel.isPrivate))&&channel.name!=='general'){const del=document.createElement('button');del.type='button';del.className='channel-delete';del.setAttribute('aria-label',`Delete #${channel.name}`);del.title=`Delete #${channel.name}`;del.textContent='×';del.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();activeChannel?.id===channel.id?window.deleteCurrentGroup():deleteChannelById(channel.id)});row.appendChild(del)}list.appendChild(row)})}
-function getMessageSignature(messages){return JSON.stringify(messages.map(m=>[m.id,m.channelId,m.userId,m.author,m.role,m.text,m.quotedMessage?.id,m.expiredFileCount,m.time||m.createdAt]));}
+function getMessageSignature(messages){return JSON.stringify(messages.map(m=>[m.id,m.channelId,m.userId,m.author,m.role,m.text,m.quotedMessage?.id,m.expiredFileCount,m.isMentioned,m.time||m.createdAt]));}
 function pageStorageKey(channel){return `convo_active_page_${channel?.id||channel?.name||'general'}`;}
 function renderPageMenu(){
   if(!messagePageMenu)return;
@@ -439,7 +439,7 @@ function renderMessages(messages){
   }
   messages.forEach(message=>{
     const article=document.createElement('article');
-    article.className='message-card';
+    article.className='message-card'+(message.isMentioned?' mention-target':'');
     const own=currentUser&&String(message.userId)===String(currentUser.id),
       canDelete=currentUser&&(currentUser.role==='superadmin'||own||(currentUser.role==='admin'&&message.role==='user'));
     const files=Array.isArray(message.files)?message.files:[];
@@ -688,7 +688,7 @@ const messageContextMenu=document.createElement('div');messageContextMenu.classN
 
   const channel=activeChannel;
   let page=activePage;
-  const payload=()=>({channel:channel.name,page,text,quotedMessageId:replyTarget?.id||null});
+  const payload=()=>({channel:channel.name,page,text,quotedMessageId:replyTarget?.id||null,mentions:window.convoGetMentionIds?.(text)||[]});
 
   try{
     let result;
@@ -709,6 +709,7 @@ const messageContextMenu=document.createElement('div');messageContextMenu.classN
     input.value='';
     input.style.height='';
     clearReplyTarget();
+    window.convoClearMentionState?.();
 
     // Refresh the actual page after the successful write instead of relying
     // on the background 3-second synchronizer, which may already be in flight.
