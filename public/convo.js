@@ -120,7 +120,7 @@ function handlePageContextMenu(e){
   e.stopPropagation();
   const page=Number(option.dataset.page);
   closePageMenu();
-  if(page===lastPage)deleteMessagePage(page);
+  deleteMessagePage(page);
 }
 messagePageMenu?.addEventListener('contextmenu',handlePageContextMenu);
 messagePageMenu?.addEventListener('pointerdown',e=>{
@@ -263,14 +263,25 @@ async function deleteMessagePage(page){
   if(!activeChannel||lastPage<=1)return;
   const target=Math.max(1,Number(page)||0);
   if(!target||target>lastPage)return;
-  if(target!==lastPage){alert('Only the last message page can be deleted.');return}
   if(!confirm('Delete message page '+target+'? All messages on this page will also be deleted.'))return;
+
   try{
-    await api('/pages/delete',{method:'POST',body:JSON.stringify({channel:activeChannel.name,page:target})});
-    const remaining=lastPage-1;
-    lastPage=Math.max(1,remaining);
-    if(activePage===target)activePage=Math.min(target,lastPage);
-    else if(activePage>target)activePage-=1;
+    const d=await api('/pages/delete',{
+      method:'POST',
+      body:JSON.stringify({channel:activeChannel.name,page:target})
+    });
+
+    const previousLastPage=lastPage;
+    lastPage=Math.max(1,Number(d.lastPage)||previousLastPage-1);
+
+    if(activePage>target){
+      activePage=Math.max(1,activePage-1);
+    }else if(activePage===target){
+      // Stay at the same numeric page when a later page moved into it.
+      // If the deleted page was the last one, move to the new last page.
+      activePage=Math.min(target,lastPage);
+    }
+
     saveActivePage();
     updatePageControls();
     await loadActivePage(false);
