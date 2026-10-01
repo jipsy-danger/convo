@@ -175,13 +175,23 @@ function updatePageControls(){
 function saveActivePage(){
   try{if(activeChannel)localStorage.setItem(pageStorageKey(activeChannel),String(activePage))}catch(e){}
 }
-async function loadChannelPages(channel){
+async function loadChannelPages(channel,initialOpen=false){
   const d=await api(`/pages?channel=${encodeURIComponent(channel.name)}`);
   const pages=Array.isArray(d.pages)?d.pages:[];
   lastPage=Math.max(1,Number(d.lastPage)||pages.length||1);
-  let saved=0;
-  try{saved=Number(localStorage.getItem(pageStorageKey(channel))||0)}catch(e){}
-  activePage=saved>=1&&saved<=lastPage?saved:lastPage;
+
+  if(initialOpen&&channel.name==='general'){
+    // Ignore any saved/previous page on the one-time application opening.
+    // Prefer the latest page that actually contains a message so an empty
+    // page created for future use never becomes the landing page.
+    const defaultPage=Math.max(1,Math.min(lastPage,Number(d.lastMessagePage)||lastPage));
+    activePage=defaultPage;
+  }else{
+    let saved=0;
+    try{saved=Number(localStorage.getItem(pageStorageKey(channel))||0)}catch(e){}
+    activePage=saved>=1&&saved<=lastPage?saved:lastPage;
+  }
+
   saveActivePage();
   updatePageControls();
 }
@@ -316,7 +326,7 @@ async function nextMessagePage(){
     alert(err.message||'Unable to create the next message page.');
   }
 }
-async function selectChannel(channelName,reportActivity=true){
+async function selectChannel(channelName,reportActivity=true,initialOpen=false){
   const channel=currentChannels.find(c=>c.name===channelName);
   if(!channel)return;
   stopMessageSync();
@@ -334,7 +344,7 @@ async function selectChannel(channelName,reportActivity=true){
   renderChannels();
   $('messagesFeed').innerHTML='<div class="state-message">Loading messages...</div>';
   try{
-    await loadChannelPages(channel);
+    await loadChannelPages(channel,initialOpen);
     const loaded=await loadActivePage(false);
     if(!loaded)return;
   }catch(err){
@@ -804,7 +814,7 @@ const superAdminLauncher=$('superAdminLauncher'),superAdminPanel=$('superAdminPa
 function openSuperAdminPanel(){if(currentUser?.role!=='superadmin')return;superAdminPanel.classList.add('open');superAdminPanel.setAttribute('aria-hidden','false');loadAdminUsers();loadAdminAnalytics()}
 function closeSuperAdminPanel(){superAdminPanel.classList.remove('open');superAdminPanel.setAttribute('aria-hidden','true')}
 superAdminLauncher.addEventListener('click',()=>superAdminPanel.classList.contains('open')?closeSuperAdminPanel():openSuperAdminPanel());$('superPanelClose').addEventListener('click',closeSuperAdminPanel);$('superPanelRefresh').addEventListener('click',()=>{loadAdminUsers();loadAdminAnalytics()});
-async function initApp(force=false){if(!currentUser||appLoading&&!force)return;appLoading=true;$('userDisplayName').textContent=currentUser.name||'';$('btnCreateChannel').style.display='inline-flex';$('superAdminLauncher').hidden=currentUser.role!=='superadmin';closeSuperAdminPanel();if(!currentChannels.length){const cached=readCachedChannels();if(cached.length){currentChannels=cached}}if(!currentChannels.length){currentChannels=[{id:'general-local',name:'general',description:'Common community thread'}]}renderChannels();const initial=currentChannels.find(c=>c.name==='general')||currentChannels[0];if(initial){activeChannel=initial;$('activeChannelHeading').textContent='# '+initial.name;$('activeChannelDesc').textContent=initial.description||'Project discussion';renderChannels();$('messagesFeed').innerHTML='<div class="state-message">Loading messages...</div>'}loadChannels(null,false).then(async target=>{if(!target)return;await selectChannel(target.name,false)}).catch(err=>{console.warn('Workspace sync failed after shell load.',err)}).finally(()=>{if(currentUser?.role==='superadmin')Promise.allSettled([loadAdminUsers(),loadAdminAnalytics()])});appLoading=false}
+async function initApp(force=false){if(!currentUser||appLoading&&!force)return;appLoading=true;$('userDisplayName').textContent=currentUser.name||'';$('btnCreateChannel').style.display='inline-flex';$('superAdminLauncher').hidden=currentUser.role!=='superadmin';closeSuperAdminPanel();if(!currentChannels.length){const cached=readCachedChannels();if(cached.length){currentChannels=cached}}if(!currentChannels.length){currentChannels=[{id:'general-local',name:'general',description:'Common community thread'}]}renderChannels();const initial=currentChannels.find(c=>c.name==='general')||currentChannels[0];if(initial){activeChannel=initial;$('activeChannelHeading').textContent='# '+initial.name;$('activeChannelDesc').textContent=initial.description||'Project discussion';renderChannels();$('messagesFeed').innerHTML='<div class="state-message">Loading messages...</div>'}loadChannels(null,false).then(async()=>{const general=currentChannels.find(c=>c.name==='general')||currentChannels[0];if(general)await selectChannel(general.name,false,true)}).catch(err=>{console.warn('Workspace sync failed after shell load.',err)}).finally(()=>{if(currentUser?.role==='superadmin')Promise.allSettled([loadAdminUsers(),loadAdminAnalytics()])});appLoading=false}
 if(currentUser?.role==='superadmin'&&!superAdminSession){
   try{localStorage.removeItem('convo_active_pin');localStorage.removeItem('convo_user');localStorage.removeItem('convo_superadmin_session')}catch(e){}
   currentPin=null;currentUser=null;hiddenPin='';pinInput.value='';resetSuperAdminArming();authOverlay.classList.remove('denied','checking','granted');hudStatus.textContent='ACCESS SYSTEM READY';hudHint.textContent='ENTER ACCESS CODE';updateHud();
