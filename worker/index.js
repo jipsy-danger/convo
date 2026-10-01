@@ -1698,14 +1698,10 @@ export default {
           return error("Message page not found.", 404);
         }
         if (pages.length <= 1) {
-          return error("The last message page cannot be deleted.", 400);
+          return error("The only message page cannot be deleted.", 400);
         }
         const page = pages.find((item) => Number(item.page_number) === pageNumber);
         if (!page) return error("Message page not found.", 404);
-        const lastPageNumber = Number(pages[pages.length - 1].page_number);
-        if (pageNumber !== lastPageNumber) {
-          return error("Only the last message page can be deleted.", 400);
-        }
 
         const pageMessages = await supabaseFetch(env, "messages", {
           query:
@@ -1725,7 +1721,35 @@ export default {
           query: `?id=eq.${encodeURIComponent(page.id)}&channel_id=eq.${encodeURIComponent(channel.id)}`,
           headers: { Prefer: "return=minimal" },
         });
-        return response({ ok: true, deletedPage: pageNumber });
+
+        const pagesAfterDelete = pages
+          .filter((item) => String(item.id) !== String(page.id))
+          .sort((a, b) => Number(a.page_number) - Number(b.page_number));
+
+        for (const [index, remainingPage] of pagesAfterDelete.entries()) {
+          const desiredNumber = index + 1;
+          if (Number(remainingPage.page_number) === desiredNumber) continue;
+
+          const currentNumber = Number(remainingPage.page_number);
+          const updated = await supabaseFetch(env, "channel_pages", {
+            method: "PATCH",
+            query:
+              `?id=eq.${encodeURIComponent(remainingPage.id)}&channel_id=eq.${encodeURIComponent(channel.id)}`,
+            body: { page_number: desiredNumber },
+            headers: { Prefer: "return=minimal" },
+          });
+
+          // Keep the local object synchronized for the response/debug path.
+          if (updated === undefined && currentNumber === desiredNumber) continue;
+        }
+
+        return response({
+          ok: true,
+          deletedPage: pageNumber,
+          lastPage: pagesAfterDelete.length
+            ? Number(pagesAfterDelete[pagesAfterDelete.length - 1].page_number)
+            : 1,
+        });
       }
 
       if (path === "/messages" && request.method === "GET") {
