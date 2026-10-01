@@ -1,0 +1,193 @@
+/* Super Admin in-page channel management */
+.super-channel-section{margin-top:18px}
+.super-admin-channel-rows{display:flex;flex-direction:column;gap:5px}
+.super-admin-channel-row{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:10px 11px;
+  border:1px solid var(--line);
+  border-radius:6px;
+  background:#101216;
+  color:inherit;
+  text-align:left;
+  cursor:pointer;
+}
+.super-admin-channel-row:hover,
+.super-admin-channel-row.active{
+  border-color:rgba(126,220,255,.28);
+  background:#121920;
+}
+.super-admin-channel-main{min-width:0}
+.super-admin-channel-main strong{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#e7edf1;
+  font-size:.76rem;
+}
+.super-admin-channel-main small{
+  display:block;
+  margin-top:3px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#68737b;
+  font-size:.62rem;
+}
+.super-admin-channel-type{
+  flex:0 0 auto;
+  color:#66727a;
+  font:600 .55rem/1 var(--font-mono);
+  letter-spacing:.08em;
+}
+.super-channel-settings-backdrop{
+  position:fixed;
+  inset:0;
+  z-index:1200;
+  display:grid;
+  place-items:center;
+  padding:20px;
+  background:rgba(0,0,0,.7);
+  backdrop-filter:blur(7px);
+}
+.super-channel-settings-backdrop[hidden]{display:none}
+.super-channel-settings{
+  width:min(520px,calc(100vw - 32px));
+  max-height:min(720px,calc(100vh - 32px));
+  overflow:auto;
+  border:1px solid rgba(126,220,255,.2);
+  border-radius:8px;
+  background:#0b0e12;
+  box-shadow:0 24px 80px rgba(0,0,0,.62);
+}
+.super-channel-settings-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding:16px 17px;
+  border-bottom:1px solid var(--line);
+}
+.super-channel-settings-kicker{
+  color:#68757e;
+  font:600 .54rem/1 var(--font-mono);
+  letter-spacing:.14em;
+}
+.super-channel-settings-head h3{
+  margin-top:5px;
+  color:#edf2f5;
+  font-size:1rem;
+}
+.super-channel-settings-close{
+  width:29px;
+  height:29px;
+  padding:0;
+  border:1px solid var(--line);
+  border-radius:5px;
+  background:#11151a;
+  color:#8b969e;
+  cursor:pointer;
+}
+.super-channel-settings-body{
+  display:grid;
+  gap:15px;
+  padding:17px;
+}
+.super-channel-settings-field{
+  display:grid;
+  gap:7px;
+  color:#7d8991;
+  font:600 .54rem/1.2 var(--font-mono);
+  letter-spacing:.1em;
+}
+.super-channel-settings-field input,
+.super-channel-settings-field textarea{
+  width:100%;
+  box-sizing:border-box;
+  border:1px solid var(--line);
+  border-radius:5px;
+  background:#070a0d;
+  color:#dfe7eb;
+  padding:10px;
+  font:13px system-ui,sans-serif;
+  outline:none;
+}
+.super-channel-settings-field textarea{min-height:76px;resize:vertical}
+.super-channel-settings-field input:focus,
+.super-channel-settings-field textarea:focus{
+  border-color:rgba(126,220,255,.48);
+}
+.super-channel-visibility{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.super-channel-visibility button{
+  padding:9px 10px;
+  border:1px solid var(--line);
+  border-radius:5px;
+  background:#101216;
+  color:#7e8991;
+  font:600 .59rem/1 var(--font-mono);
+  cursor:pointer;
+}
+.super-channel-visibility button.active{
+  border-color:rgba(126,220,255,.48);
+  background:#11202a;
+  color:#a4e9ff;
+}
+.super-channel-visibility button:disabled{opacity:.35;cursor:default}
+.super-channel-members{
+  display:grid;
+  gap:5px;
+  max-height:230px;
+  overflow:auto;
+  padding:7px;
+  border:1px solid var(--line);
+  border-radius:5px;
+  background:#080b0f;
+}
+.super-channel-member-option{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  gap:9px;
+  align-items:center;
+  padding:8px;
+  border-radius:4px;
+  color:#ced7dc;
+  font:12px system-ui,sans-serif;
+}
+.super-channel-member-option:hover{background:#11161b}
+.super-channel-member-option small{
+  color:#606b73;
+  font:600 .51rem/1 var(--font-mono);
+  text-transform:uppercase;
+}
+.super-channel-member-option input{accent-color:#67dfff}
+.super-channel-settings-error{
+  min-height:16px;
+  color:#e6979f;
+  font:11px system-ui,sans-serif;
+}
+.super-channel-settings-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:7px;
+  padding:13px 17px;
+  border-top:1px solid var(--line);
+}
+.super-channel-settings-actions button{
+  padding:8px 11px;
+  border:1px solid var(--line);
+  border-radius:5px;
+  background:#11151a;
+  color:#8a959d;
+  font:600 .57rem/1 var(--font-mono);
+  cursor:pointer;
+}
+.super-channel-settings-actions button.primary{
+  border-color:rgba(126,220,255,.35);
+  background:#10212b;
+  color:#9be7ff;
+}
+.super-channel-settings-actions button:disabled{opacity:.35;cursor:default}
