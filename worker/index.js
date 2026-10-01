@@ -45,6 +45,13 @@ function cleanName(value) {
     .slice(0, MAX_NAME_LENGTH);
 }
 
+function cleanDescription(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 160);
+}
+
 function validPin(pin) {
   return /^\d{4}$/.test(String(pin ?? ""));
 }
