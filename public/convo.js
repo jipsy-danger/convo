@@ -129,7 +129,9 @@ function renderPageMenu(){
     deleteButton.setAttribute('aria-label','Delete page '+page);
     deleteButton.title='Delete page '+page;
     deleteButton.textContent='Delete';
-    deleteButton.disabled=lastPage<=1;
+    const canDeletePages=['admin','superadmin'].includes(currentUser?.role);
+    deleteButton.disabled=!canDeletePages||lastPage<=1;
+    if(!canDeletePages)deleteButton.title='Only Admin or Super Admin can delete pages';
 
     row.append(selectButton,deleteButton);
     messagePageMenu.appendChild(row);
@@ -187,7 +189,14 @@ function updatePageControls(){
   if(btnPagePrev)btnPagePrev.disabled=activePage<=1;
   if(btnPageNext)btnPageNext.disabled=activePage>=lastPage&&lastMessageSignature==='[]';
   const deletePageButton=$('btnDeletePage');
-  if(deletePageButton)deletePageButton.disabled=lastPage<=1;
+  if(deletePageButton){
+    const canDeletePages=['admin','superadmin'].includes(currentUser?.role);
+    deletePageButton.hidden=!canDeletePages;
+    deletePageButton.disabled=!canDeletePages||lastPage<=1;
+    deletePageButton.title=canDeletePages
+      ? 'Delete current message page'
+      : 'Only Admin or Super Admin can delete pages';
+  }
 }
 function saveActivePage(){
   try{if(activeChannel)localStorage.setItem(pageStorageKey(activeChannel),String(activePage))}catch(e){}
@@ -277,6 +286,10 @@ async function syncActiveMessages(preserveScroll=true){
 
 function startMessageSync(){stopMessageSync();messageSyncTimer=setInterval(()=>syncActiveMessages(true),3000)}
 async function deleteMessagePage(page){
+  if(!['admin','superadmin'].includes(currentUser?.role)){
+    alert('Only Admin or Super Admin can delete message pages.');
+    return;
+  }
   if(!activeChannel||lastPage<=1)return;
   const target=Math.max(1,Number(page)||0);
   if(!target||target>lastPage)return;
