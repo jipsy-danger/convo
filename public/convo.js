@@ -107,13 +107,10 @@ function renderPageMenu(){
   for(let page=1;page<=lastPage;page++){
     const row=document.createElement('div');
     row.className='message-page-row'+(page===activePage?' active':'');
-    row.dataset.page=String(page);
 
     const selectButton=document.createElement('button');
     selectButton.type='button';
     selectButton.className='message-page-option';
-    selectButton.setAttribute('role','option');
-    selectButton.setAttribute('aria-selected',page===activePage?'true':'false');
     selectButton.textContent=String(page);
     selectButton.addEventListener('click',async e=>{
       e.preventDefault();
@@ -125,50 +122,18 @@ function renderPageMenu(){
     const deleteButton=document.createElement('button');
     deleteButton.type='button';
     deleteButton.className='message-page-delete';
-    deleteButton.dataset.page=String(page);
-    deleteButton.setAttribute('aria-label','Delete page '+page);
-    deleteButton.title='Delete page '+page;
     deleteButton.textContent='Delete';
-    const canDeletePages=Boolean(currentUser);
-    deleteButton.disabled=!canDeletePages||lastPage<=1;
-    if(!canDeletePages)deleteButton.title='Sign in to delete pages';
+    deleteButton.disabled=!currentUser||lastPage<=1;
+    deleteButton.addEventListener('click',async e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      await deleteMessagePage(page);
+    });
 
     row.append(selectButton,deleteButton);
     messagePageMenu.appendChild(row);
   }
 }
-
-function requestPageDeleteFromElement(event){
-  const button=event.target.closest?.('.message-page-delete');
-  if(!button||!messagePageMenu.contains(button))return false;
-
-  event.preventDefault();
-  event.stopPropagation();
-  event.stopImmediatePropagation();
-
-  const page=Number(button.dataset.page);
-  if(!Number.isInteger(page)||page<1)return true;
-
-  if(event.type==='pointerdown'){
-    if(event.button!==0)return true;
-    pageDeletePointerHandledAt=Date.now();
-    deleteMessagePage(page);
-    return true;
-  }
-
-  if(event.type==='click'){
-    if(Date.now()-pageDeletePointerHandledAt<500)return true;
-    deleteMessagePage(page);
-    return true;
-  }
-
-  return true;
-}
-
-// Delegated handlers are attached once to the persistent menu container.
-// They continue to work after every page-list rebuild.
-messagePageMenu?.addEventListener('pointerdown',requestPageDeleteFromElement,true);
-messagePageMenu?.addEventListener('click',requestPageDeleteFromElement,true);
 
 function closePageMenu(){
   if(!messagePageMenu)return;
@@ -190,12 +155,9 @@ function updatePageControls(){
   if(btnPageNext)btnPageNext.disabled=activePage>=lastPage&&lastMessageSignature==='[]';
   const deletePageButton=$('btnDeletePage');
   if(deletePageButton){
-    const canDeletePages=Boolean(currentUser);
-    deletePageButton.hidden=!canDeletePages;
-    deletePageButton.disabled=!canDeletePages||lastPage<=1;
-    deletePageButton.title=canDeletePages
-      ? 'Delete current message page'
-      : 'Sign in to delete message pages';
+    deletePageButton.hidden=!currentUser;
+    deletePageButton.disabled=!currentUser||lastPage<=1;
+    deletePageButton.title='Delete current message page';
   }
 }
 function saveActivePage(){
@@ -286,10 +248,7 @@ async function syncActiveMessages(preserveScroll=true){
 
 function startMessageSync(){stopMessageSync();messageSyncTimer=setInterval(()=>syncActiveMessages(true),3000)}
 async function deleteMessagePage(page){
-  if(!currentUser){
-    alert('Sign in to delete message pages.');
-    return;
-  }
+  if(!currentUser)return;
   if(!activeChannel||lastPage<=1)return;
   const target=Math.max(1,Number(page)||0);
   if(!target||target>lastPage)return;
