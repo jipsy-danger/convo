@@ -101,6 +101,7 @@ function pageStorageKey(channel){return `convo_active_page_${channel?.id||channe
 function renderPageMenu(){
   if(!messagePageMenu)return;
   messagePageMenu.replaceChildren();
+
   for(let page=1;page<=lastPage;page++){
     const button=document.createElement('button');
     button.type='button';
@@ -109,50 +110,58 @@ function renderPageMenu(){
     button.setAttribute('aria-selected',page===activePage?'true':'false');
     button.dataset.page=String(page);
     button.textContent=String(page);
-    button.addEventListener('click',async e=>{e.stopPropagation();closePageMenu();await selectMessagePage(page)});
+
+    button.addEventListener('click',async e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      closePageMenu();
+      await selectMessagePage(page);
+    });
+
+    // Page deletion is owned by Convo, not the browser context menu.
+    // Bind directly to each page option so the right-click action remains
+    // reliable even when the dropdown is dynamically rebuilt.
+    button.addEventListener('contextmenu',e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      closePageMenu();
+      deleteMessagePage(page);
+    });
+
     messagePageMenu.appendChild(button);
   }
 }
-function handlePageContextMenu(e){
-  const option=e.target.closest('.message-page-option');
-  if(!option||!messagePageMenu.contains(option))return;
-  e.preventDefault();
-  e.stopPropagation();
-  const page=Number(option.dataset.page);
-  closePageMenu();
-  deleteMessagePage(page);
-}
-messagePageMenu?.addEventListener('contextmenu',handlePageContextMenu);
-messagePageMenu?.addEventListener('pointerdown',e=>{
-  if(e.button!==2)return;
-  const option=e.target.closest('.message-page-option');
-  if(!option)return;
-  e.preventDefault();
-  e.stopPropagation();
-  closePageMenu();
-  deleteMessagePage(Number(option.dataset.page));
-});
+
 messagePageIndicator?.addEventListener('contextmenu',e=>{
   e.preventDefault();
   e.stopPropagation();
+  e.stopImmediatePropagation();
   closePageMenu();
-  if(activePage===lastPage)deleteMessagePage(activePage);
+  deleteMessagePage(activePage);
 });
+
 messagePageIndicator?.addEventListener('pointerdown',e=>{
   if(e.button!==2)return;
   e.preventDefault();
   e.stopPropagation();
   closePageMenu();
-  if(activePage===lastPage)deleteMessagePage(activePage);
+  deleteMessagePage(activePage);
 });
+
 document.querySelector('.message-page-controls')?.addEventListener('contextmenu',e=>{
-  if(e.target.closest('.message-page-option,.page-nav-btn'))return;
+  const pageOption=e.target.closest('.message-page-option');
+  const navButton=e.target.closest('.page-nav-btn');
+  if(pageOption||navButton)return;
+
   if(!e.target.closest('#messagePageIndicator'))return;
   e.preventDefault();
   e.stopPropagation();
+  e.stopImmediatePropagation();
   closePageMenu();
   deleteMessagePage(activePage);
 });
+
 function closePageMenu(){
   if(!messagePageMenu)return;
   messagePageMenu.hidden=true;
