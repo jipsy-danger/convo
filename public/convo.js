@@ -254,11 +254,21 @@ async function syncActiveMessages(preserveScroll=true){
 
 function startMessageSync(){stopMessageSync();messageSyncTimer=setInterval(()=>syncActiveMessages(true),3000)}
 async function clearPageImages(page){
-  if(!currentUser||!activeChannel)return;
+  if(!currentUser||!activeChannel)return false;
   const target=Math.max(1,Number(page)||0);
-  if(!target||target>lastPage)return;
+  if(!target||target>lastPage)return false;
 
-  if(!confirm('Clear all images from message page '+target+'? Text and other files will remain.'))return;
+  const button=$('btnClearPageImages');
+  if(button?.disabled)return false;
+
+  if(!confirm('Clear all images from message page '+target+'? Text and other files will remain.'))return false;
+
+  const originalLabel=button?.textContent||'Clear';
+  if(button){
+    button.disabled=true;
+    button.textContent='Clearing…';
+    button.setAttribute('aria-busy','true');
+  }
 
   try{
     const d=await api('/pages/images/clear',{
@@ -267,19 +277,32 @@ async function clearPageImages(page){
     });
 
     await loadChannelPages(activeChannel);
+    if(activeChannel)await loadActivePage(false);
 
-    if(activeChannel){
-      await loadActivePage(false);
+    if(button){
+      if(Number(d.clearedImages)>0){
+        button.textContent='Cleared';
+      }else{
+        button.textContent='No images';
+      }
+      setTimeout(()=>{
+        if(button){
+          button.textContent=originalLabel;
+          button.disabled=false;
+          button.removeAttribute('aria-busy');
+        }
+      },1200);
     }
-
-    if(Number(d.clearedImages)>0){
-      return;
-    }
-
-    // No images is a normal no-op; do not show an error.
+    return Number(d.clearedImages)||0;
   }catch(err){
     console.error('Page image clear failed.',err);
+    if(button){
+      button.textContent='Clear';
+      button.disabled=false;
+      button.removeAttribute('aria-busy');
+    }
     alert(err.message||'Unable to clear page images.');
+    return false;
   }
 }
 async function deleteMessagePage(page){
@@ -407,8 +430,16 @@ btnPagePrev?.addEventListener('click',()=>selectMessagePage(activePage-1));
 btnPageNext?.addEventListener('click',()=>nextMessagePage());
 window.convoDeleteCurrentPage=()=>window.convoDeletePage(activePage);
 window.convoClearCurrentPageImages=()=>window.convoClearPageImages(activePage);
-$('btnDeletePage')?.setAttribute('onclick','window.convoDeleteCurrentPage()');
-$('btnClearPageImages')?.setAttribute('onclick','window.convoClearCurrentPageImages()');
+$('btnDeletePage')?.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  window.convoDeleteCurrentPage();
+});
+$('btnClearPageImages')?.addEventListener('click',e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  window.convoClearCurrentPageImages();
+});
 messagePageIndicator?.addEventListener('click',e=>{e.stopPropagation();togglePageMenu()});
 document.addEventListener('click',e=>{if(!e.target.closest('.message-page-controls'))closePageMenu()});
 window.addEventListener('keydown',e=>{if(e.key==='Escape')closePageMenu()});
