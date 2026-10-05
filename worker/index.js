@@ -41,6 +41,8 @@ function error(message, status = 400) {
 function cleanName(value) {
   return String(value ?? "")
     .trim()
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]+/g, "_")
     .replace(/\s+/g, " ")
     .slice(0, MAX_NAME_LENGTH);
 }
@@ -162,7 +164,7 @@ async function deleteStorageObject(env, bucket, objectPath, options = {}) {
 
 function cleanFileName(value) {
   const cleaned = String(value || "file")
-    .normalize("NFKC")
+    .normalize("NFKD")
     .replace(/[\\/:*?"<>|\u0000-\u001F]+/g, "_")
     .replace(/\s+/g, " ")
     .replace(/\.{2,}/g, ".")
