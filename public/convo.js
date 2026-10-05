@@ -470,6 +470,46 @@ function bindMessageSwipe(article,message){
   article.addEventListener('pointercancel',reset);
   article.addEventListener('lostpointercapture',()=>{if(active)reset()});
 }
+function copyPlainText(value){
+  const text=String(value??'');
+  if(!text)return Promise.resolve(false);
+  if(navigator.clipboard?.writeText){
+    return navigator.clipboard.writeText(text).then(()=>true).catch(()=>copyPlainTextFallback(text));
+  }
+  return copyPlainTextFallback(text);
+}
+function copyPlainTextFallback(text){
+  const area=document.createElement('textarea');
+  area.value=text;
+  area.setAttribute('readonly','');
+  area.style.position='fixed';
+  area.style.left='-10000px';
+  area.style.top='-10000px';
+  area.style.opacity='0';
+  document.body.appendChild(area);
+  area.focus();
+  area.select();
+  let copied=false;
+  try{copied=document.execCommand('copy')}catch(e){copied=false}
+  area.remove();
+  return Promise.resolve(copied);
+}
+function renderFencedMessageText(value){
+  const text=String(value??'');
+  const fence=/```([^\n]*)\n([\s\S]*?)```/g;
+  let cursor=0,match,html='';
+  while((match=fence.exec(text))){
+    const before=text.slice(cursor,match.index);
+    if(before)html+=`<span class="message-text-plain">${esc(before)}</span>`;
+    const language=String(match[1]||'').trim();
+    const label=language||'CODE';
+    html+=`<div class="message-code-block"><div class="message-code-toolbar"><span class="message-code-language">${esc(label)}</span><button type="button" class="message-code-copy" aria-label="Copy code">Copy</button></div><pre><code>${esc(match[2])}</code></pre></div>`;
+    cursor=fence.lastIndex;
+  }
+  const tail=text.slice(cursor);
+  if(tail)html+=`<span class="message-text-plain">${esc(tail)}</span>`;
+  return html||`<span class="message-text-plain">${esc(text)}</span>`;
+}
 function renderMessages(messages){
   const feed=$('messagesFeed');
   feed.replaceChildren();
@@ -497,7 +537,7 @@ function renderMessages(messages){
         ${image?`<div class="shared-file-image-wrap" data-image-attachment-id="${Number(file.id)}"><span class="file-preview-loading">Loading preview…</span><img class="shared-file-image" alt="${esc(file.fileName||'Image preview')}" data-image-id="${Number(file.id)}" loading="eager" decoding="async" hidden></div>`:''}
       </div>`;
     }).join('');
-    const textHtml=String(message.text||'')?`<div class="message-text">${esc(message.text)}</div>`:'';
+    const textHtml=String(message.text||'')?`<div class="message-text">${renderFencedMessageText(message.text)}</div>`:'';
     const expiredHtml=message.expiredFileCount?`<div class="shared-file expired-file-placeholder"><span>Attachment expired</span><span>${Number(message.expiredFileCount)} file${Number(message.expiredFileCount)===1?'':'s'}</span></div>`:'';
     const quoted=message.quotedMessage;
     const quotedHtml=quoted?`<div class="message-reply-preview"><span class="message-reply-author">${esc(quoted.author||'Unknown')}</span><span class="message-reply-text">${esc(replyPreviewText(quoted))}</span></div>`:'';
@@ -505,6 +545,25 @@ function renderMessages(messages){
     const del=article.querySelector('.message-delete');
     if(del)del.addEventListener('click',()=>deleteMessage(message.id));
     article.querySelectorAll('.file-download').forEach(button=>button.addEventListener('click',()=>downloadAttachment(Number(button.dataset.attachmentId),button)));
+    article.querySelectorAll('.message-code-copy').forEach(button=>{
+      button.addEventListener('click',async e=>{
+        e.preventDefault();
+        e.stopPropagation();
+        const code=button.closest('.message-code-block')?.querySelector('code');
+        if(!code)return;
+        const copied=await copyPlainText(code.textContent||'');
+        const original='Copy';
+        button.textContent=copied?'Copied':'Copy';
+        button.classList.toggle('copied',copied);
+        if(copied){
+          clearTimeout(button._copyResetTimer);
+          button._copyResetTimer=setTimeout(()=>{
+            button.textContent=original;
+            button.classList.remove('copied');
+          },1400);
+        }
+      });
+    });
     article.querySelectorAll('.shared-file-image[data-image-id]').forEach(image=>{
       loadImagePreview(Number(image.dataset.imageId),image,image.closest('.shared-file-image-wrap'));
     });
