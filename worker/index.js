@@ -173,6 +173,19 @@ function cleanFileName(value) {
   return cleaned || "file";
 }
 
+function cleanStorageFileName(value) {
+  const cleaned = String(value || "file")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]+/g, "_")
+    .replace(/[\\/:*?"<>|\u0000-\u001F]+/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/\.{2,}/g, ".")
+    .trim()
+    .slice(0, 160);
+  return cleaned || "file";
+}
+
 function bytesToBase64Url(bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -1239,9 +1252,10 @@ export default {
         if (!page) return error("Message page not found.", 404);
 
         const fileName = cleanFileName(file.name);
+        const storageFileName = cleanStorageFileName(file.name);
         const mimeType = file.type || "application/octet-stream";
         const objectPath =
-          `channels/${channel.id}/pages/${page.id}/${crypto.randomUUID()}-${fileName}`;
+          `channels/${channel.id}/pages/${page.id}/${crypto.randomUUID()}-${storageFileName}`;
 
         const storageResponse = await storageObjectRequest(
           env,
