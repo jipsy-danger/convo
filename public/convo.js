@@ -261,47 +261,95 @@ async function clearPageImages(page){
   const button=$('btnClearPageImages');
   if(button?.disabled)return false;
 
-  if(!confirm('Clear all images from message page '+target+'? Text and other files will remain.'))return false;
-
   const originalLabel=button?.textContent||'Clear';
   if(button){
     button.disabled=true;
-    button.textContent='Clearing…';
+    button.textContent='Checking…';
     button.setAttribute('aria-busy','true');
   }
 
   try{
-    const d=await api('/pages/images/clear',{
+    const data=await api('/pages/clear',{
       method:'POST',
       body:JSON.stringify({channel:activeChannel.name,page:target})
     });
 
-    await loadChannelPages(activeChannel);
-    if(activeChannel)await loadActivePage(false);
-
-    if(button){
-      if(Number(d.clearedImages)>0){
-        button.textContent='Cleared';
-      }else{
-        button.textContent='No images';
-      }
+    if(data.stage==='expired'){
+      if(button)button.textContent=Number(data.clearedExpiredAttachments)>0?'Cleared expired':'No expired';
+      await loadChannelPages(activeChannel);
+      await loadActivePage(false);
       setTimeout(()=>{
         if(button){
           button.textContent=originalLabel;
           button.disabled=false;
           button.removeAttribute('aria-busy');
         }
-      },1200);
+      },1100);
+      return true;
     }
-    return Number(d.clearedImages)||0;
-  }catch(err){
-    console.error('Page image clear failed.',err);
+
+    if(data.needsFullClear){
+      const confirmed=confirm(
+        'No expired content remains on page '+target+'.\\n\\nClear all messages on this page? The page itself will remain.'
+      );
+      if(!confirmed){
+        if(button){
+          button.textContent=originalLabel;
+          button.disabled=false;
+          button.removeAttribute('aria-busy');
+        }
+        return false;
+      }
+
+      if(button)button.textContent='Clearing…';
+
+      const cleared=await api('/pages/clear',{
+        method:'POST',
+        body:JSON.stringify({
+          channel:activeChannel.name,
+          page:target,
+          confirmFullClear:true
+        })
+      });
+
+      await loadChannelPages(activeChannel);
+      await loadActivePage(false);
+
+      if(button){
+        button.textContent='Page cleared';
+        setTimeout(()=>{
+          if(button){
+            button.textContent=originalLabel;
+            button.disabled=false;
+            button.removeAttribute('aria-busy');
+          }
+        },1200);
+      }
+      return Number(cleared.clearedMessages)||0;
+    }
+
+    // Empty page or already-cleared page.
+    await loadChannelPages(activeChannel);
+    await loadActivePage(false);
     if(button){
-      button.textContent='Clear';
+      button.textContent=data.stage==='empty'?'Empty':'Clear';
+      setTimeout(()=>{
+        if(button){
+          button.textContent=originalLabel;
+          button.disabled=false;
+          button.removeAttribute('aria-busy');
+        }
+      },1000);
+    }
+    return true;
+  }catch(err){
+    console.error('Page clear failed.',err);
+    if(button){
+      button.textContent=originalLabel;
       button.disabled=false;
       button.removeAttribute('aria-busy');
     }
-    alert(err.message||'Unable to clear page images.');
+    alert(err.message||'Unable to clear this page.');
     return false;
   }
 }
