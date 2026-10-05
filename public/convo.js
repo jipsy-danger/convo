@@ -515,39 +515,87 @@ function resetMessageSwipe(article){
   article.style.transform='';
 }
 function bindMessageSwipe(article,message){
-  let startX=0,startY=0,active=false,blocked=false,moved=false,pointerId=null;
+  let startX=0,startY=0,active=false,moved=false,pointerId=null;
+
   const reset=()=>{
-    if(pointerId!==null){try{if(article.hasPointerCapture?.(pointerId))article.releasePointerCapture(pointerId)}catch(e){}}
-    pointerId=null;active=false;blocked=false;moved=false;resetMessageSwipe(article);
+    if(pointerId!==null){
+      try{
+        if(article.hasPointerCapture?.(pointerId))article.releasePointerCapture(pointerId);
+      }catch(e){}
+    }
+    pointerId=null;
+    active=false;
+    moved=false;
+    resetMessageSwipe(article);
   };
-  const isTextSurface=target=>{
-    if(!target||!(target instanceof Element))return false;
-    const surface=target.closest('.message-text,.message-code-block');
-    if(!surface)return false;
-    return getComputedStyle(surface).cursor==='text';
+
+  const isTextCursorPoint=(x,y,target)=>{
+    const pointTarget=
+      document.elementFromPoint?.(x,y) ||
+      (target instanceof Element ? target : null);
+
+    if(!(pointTarget instanceof Element))return false;
+
+    const textSurface=pointTarget.closest('.message-text,.message-code-block');
+    if(!textSurface)return false;
+
+    const cursor=getComputedStyle(pointTarget).cursor || getComputedStyle(textSurface).cursor;
+    return cursor==='text' || cursor==='vertical-text';
   };
+
+  // Capture the pointer before the card's bubble handler sees it. When the
+  // browser is showing the I-beam/text cursor, this area belongs entirely to
+  // native text selection and can never start reply swipe.
   article.addEventListener('pointerdown',e=>{
     if(e.button!==0)return;
     if(e.target.closest('button,a,input,textarea,select,[contenteditable="true"]'))return;
-    if(isTextSurface(e.target))return;
-    startX=e.clientX;startY=e.clientY;active=true;blocked=false;moved=false;pointerId=e.pointerId;
+
+    if(isTextCursorPoint(e.clientX,e.clientY,e.target)){
+      active=false;
+      moved=false;
+      return;
+    }
+  },true);
+
+  article.addEventListener('pointerdown',e=>{
+    if(e.button!==0)return;
+    if(e.target.closest('button,a,input,textarea,select,[contenteditable="true"]'))return;
+
+    if(isTextCursorPoint(e.clientX,e.clientY,e.target))return;
+
+    startX=e.clientX;
+    startY=e.clientY;
+    active=true;
+    moved=false;
+    pointerId=e.pointerId;
   });
+
   article.addEventListener('pointermove',e=>{
-    if(!active||blocked)return;
-    const dx=e.clientX-startX,dy=e.clientY-startY;
+    if(!active)return;
+
+    const dx=e.clientX-startX;
+    const dy=e.clientY-startY;
+
     if(!moved){
-      if(Math.abs(dy)>10&&Math.abs(dy)>Math.abs(dx)){blocked=true;return;}
+      if(Math.abs(dy)>10&&Math.abs(dy)>Math.abs(dx)){
+        reset();
+        return;
+      }
       if(Math.abs(dx)<8)return;
+
       moved=true;
       article.classList.add('swiping');
       try{article.setPointerCapture(pointerId)}catch(err){}
     }
+
     const distance=Math.max(-110,Math.min(110,dx));
     article.style.transform='translateX('+distance+'px)';
     if(Math.abs(dx)>10)e.preventDefault();
   },{passive:false});
+
   article.addEventListener('pointerup',e=>{
     if(!active)return;
+
     const dx=e.clientX-startX;
     if(moved&&Math.abs(dx)>=60){
       const target=message;
@@ -555,8 +603,10 @@ function bindMessageSwipe(article,message){
       setReplyTarget(target);
       return;
     }
+
     reset();
   });
+
   article.addEventListener('pointercancel',reset);
   article.addEventListener('lostpointercapture',()=>{if(active)reset()});
 }
