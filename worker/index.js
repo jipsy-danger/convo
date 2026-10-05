@@ -1318,7 +1318,7 @@ export default {
         });
       }
 
-      if (path === "/pages/clear" && request.method === "POST") {
+      if ((path === "/pages/clear" || path === "/pages/images/clear") && request.method === "POST") {
         const body = await request.json().catch(() => ({}));
         const channelName = String(body.channel || "").trim().toLowerCase();
         const pageNumber = Number(body.page);
