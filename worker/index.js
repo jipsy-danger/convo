@@ -141,11 +141,23 @@ async function storageObjectRequest(env, bucket, objectPath, options = {}) {
   });
 }
 
-async function deleteStorageObject(env, bucket, objectPath) {
+async function deleteStorageObject(env, bucket, objectPath, options = {}) {
+  const { ignoreErrors = false } = options;
   const res = await storageObjectRequest(env, bucket, objectPath, { method: "DELETE" });
-  if (res.ok || res.status === 404 || res.status === 400) return;
+  if (res.ok || res.status === 404 || res.status === 400) {
+    return { ok: true, alreadyGone: res.status === 404 || res.status === 400 };
+  }
   const text = await res.text();
-  throw new Error(text || `Storage delete failed (${res.status})`);
+  if (ignoreErrors) {
+    console.warn("Storage delete failed; continuing cleanup.", {
+      bucket,
+      objectPath,
+      status: res.status,
+      detail: text,
+    });
+    return { ok: false, ignored: true };
+  }
+  throw new Error(text || ("Storage delete failed (" + res.status + ")"));
 }
 
 function cleanFileName(value) {
@@ -286,7 +298,8 @@ async function cleanupExpiredAttachments(env) {
       await deleteStorageObject(
         env,
         row.bucket || ATTACHMENT_BUCKET,
-        row.object_path
+        row.object_path,
+        { ignoreErrors: true }
       );
       await supabaseFetch(env, "message_attachments", {
         method: "PATCH",
@@ -1386,7 +1399,8 @@ export default {
                 await deleteStorageObject(
                   env,
                   attachment.bucket || ATTACHMENT_BUCKET,
-                  attachment.object_path
+                  attachment.object_path,
+                  { ignoreErrors: true }
                 );
               }
 
