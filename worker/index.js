@@ -143,7 +143,7 @@ async function storageObjectRequest(env, bucket, objectPath, options = {}) {
 
 async function deleteStorageObject(env, bucket, objectPath) {
   const res = await storageObjectRequest(env, bucket, objectPath, { method: "DELETE" });
-  if (res.ok || res.status === 404) return;
+  if (res.ok || res.status === 404 || res.status === 400) return;
   const text = await res.text();
   throw new Error(text || `Storage delete failed (${res.status})`);
 }
