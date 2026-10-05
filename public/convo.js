@@ -856,6 +856,7 @@ const messageContextMenu=document.createElement('div');messageContextMenu.classN
 
     input.value='';
     input.style.height='';
+    renderComposerPreview();
     clearReplyTarget();
     window.convoClearMentionState?.();
 
