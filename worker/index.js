@@ -832,13 +832,10 @@ async function getMessagesForChannel(env, channelId, pageNumber = null, viewerUs
     );
 }
 async function createChannel(env, user, name, description, isPrivate = false, memberIds = []) {
-  const privateChannel = Boolean(isPrivate);
-  if (privateChannel && user.role !== "superadmin") {
-    throw Object.assign(
-      new Error("Only the Super Admin can create private channels."),
-      { status: 403 }
-    );
-  }
+  // Every authenticated user can create a channel.
+  // Normal users/admins are always normalized to public channels.
+  // Only Super Admin may explicitly create a private channel.
+  const privateChannel = user.role === "superadmin" && Boolean(isPrivate);
 
   const safeName = String(name || "")
     .trim()
