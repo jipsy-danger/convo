@@ -1318,10 +1318,11 @@ export default {
         });
       }
 
-      if (path === "/pages/images/clear" && request.method === "POST") {
+      if (path === "/pages/clear" && request.method === "POST") {
         const body = await request.json().catch(() => ({}));
         const channelName = String(body.channel || "").trim().toLowerCase();
         const pageNumber = Number(body.page);
+        const confirmFullClear = Boolean(body.confirmFullClear);
 
         if (!channelName) return error("Channel is required.");
         if (!Number.isInteger(pageNumber) || pageNumber < 1) {
@@ -1345,80 +1346,132 @@ export default {
           query:
             `?select=id,text&channel_id=eq.${encodeURIComponent(
               channel.id
-            )}&page_id=eq.${encodeURIComponent(page.id)}&limit=300`,
+            )}&page_id=eq.${encodeURIComponent(page.id)}&limit=1000`,
         });
-
         const messageRows = Array.isArray(messages) ? messages : [];
         const messageIds = messageRows.map((row) => row.id).filter(Boolean);
+
         if (!messageIds.length) {
-          return response({ ok: true, clearedImages: 0, clearedMessages: 0 });
+          return response({
+            ok: true,
+            stage: "empty",
+            clearedExpiredAttachments: 0,
+            clearedMessages: 0,
+            needsFullClear: false,
+          });
         }
 
         const attachments = await supabaseFetch(env, "message_attachments", {
           query:
-            `?select=id,message_id,bucket,object_path,mime_type,deleted_at&message_id=in.(${messageIds
+            `?select=id,message_id,bucket,object_path,mime_type,expires_at,deleted_at&message_id=in.(${messageIds
               .map((id) => encodeURIComponent(id))
-              .join(",")})&deleted_at=is.null&limit=1000`,
+              .join(",")})&limit=2000`,
+        });
+        const attachmentRows = Array.isArray(attachments) ? attachments : [];
+        const now = Date.now();
+        const expiredAttachments = attachmentRows.filter((attachment) => {
+          const expiresAt = Date.parse(attachment.expires_at || "");
+          return Boolean(attachment.deleted_at) ||
+            !Number.isFinite(expiresAt) ||
+            expiresAt <= now;
         });
 
-        const imageAttachments = (Array.isArray(attachments) ? attachments : [])
-          .filter((row) => String(row.mime_type || "").toLowerCase().startsWith("image/"));
+        if (expiredAttachments.length && !confirmFullClear) {
+          let clearedExpiredAttachments = 0;
+          const affectedMessageIds = new Set();
 
-        if (!imageAttachments.length) {
-          return response({ ok: true, clearedImages: 0, clearedMessages: 0 });
-        }
+          for (const attachment of expiredAttachments) {
+            try {
+              if (!attachment.deleted_at) {
+                await deleteStorageObject(
+                  env,
+                  attachment.bucket || ATTACHMENT_BUCKET,
+                  attachment.object_path
+                );
+              }
 
-        for (const attachment of imageAttachments) {
-          try {
-            await deleteStorageObject(
-              env,
-              attachment.bucket || ATTACHMENT_BUCKET,
-              attachment.object_path
-            );
-          } catch (err) {
-            // Keep the DB row untouched when storage deletion fails.
-            console.warn("Image storage cleanup failed; keeping attachment row.", err);
-            continue;
+              await supabaseFetch(env, "message_attachments", {
+                method: "DELETE",
+                query: `?id=eq.${encodeURIComponent(attachment.id)}`,
+                headers: { Prefer: "return=minimal" },
+              });
+
+              clearedExpiredAttachments += 1;
+              if (attachment.message_id) {
+                affectedMessageIds.add(String(attachment.message_id));
+              }
+            } catch (err) {
+              console.warn("Expired attachment cleanup failed.", err);
+            }
           }
 
-          await supabaseFetch(env, "message_attachments", {
-            method: "PATCH",
-            query:
-              `?id=eq.${encodeURIComponent(attachment.id)}&deleted_at=is.null`,
-            body: { deleted_at: new Date().toISOString() },
-            headers: { Prefer: "return=minimal" },
-          });
-        }
-
-        // Remove message rows that became completely empty after clearing
-        // their image-only attachments. Text and non-image attachments remain.
-        let clearedMessages = 0;
-        for (const message of messageRows) {
-          if (String(message.text || "").trim()) continue;
-
-          const remaining = await supabaseFetch(env, "message_attachments", {
-            query:
-              `?select=id&message_id=eq.${encodeURIComponent(
-                message.id
-              )}&deleted_at=is.null&limit=1`,
-          });
-
-          if (!Array.isArray(remaining) || !remaining.length) {
-            await supabaseFetch(env, "messages", {
-              method: "DELETE",
-              query: `?id=eq.${encodeURIComponent(message.id)}`,
-              headers: { Prefer: "return=minimal" },
+          let clearedMessages = 0;
+          for (const messageId of affectedMessageIds) {
+            const rows = await supabaseFetch(env, "messages", {
+              query:
+                `?select=id,text&channel_id=eq.${encodeURIComponent(
+                  channel.id
+                )}&page_id=eq.${encodeURIComponent(page.id)}&id=eq.${encodeURIComponent(
+                  messageId
+                )}&limit=1`,
             });
-            clearedMessages += 1;
+            const message = Array.isArray(rows) ? rows[0] : null;
+            if (!message || String(message.text || "").trim()) continue;
+
+            const remaining = await supabaseFetch(env, "message_attachments", {
+              query:
+                `?select=id&message_id=eq.${encodeURIComponent(messageId)}&limit=1`,
+            });
+            if (!Array.isArray(remaining) || !remaining.length) {
+              await supabaseFetch(env, "messages", {
+                method: "DELETE",
+                query: `?id=eq.${encodeURIComponent(messageId)}&channel_id=eq.${encodeURIComponent(channel.id)}&page_id=eq.${encodeURIComponent(page.id)}`,
+                headers: { Prefer: "return=minimal" },
+              });
+              clearedMessages += 1;
+            }
           }
+
+          await recordActivitySafe(env, user, channel.id, "POSTED");
+
+          return response({
+            ok: true,
+            stage: "expired",
+            clearedExpiredAttachments,
+            clearedMessages,
+            needsFullClear: false,
+          });
         }
+
+        if (!confirmFullClear) {
+          return response({
+            ok: true,
+            stage: "ready",
+            clearedExpiredAttachments: 0,
+            clearedMessages: 0,
+            needsFullClear: true,
+          });
+        }
+
+        // No expired attachments remain. This is the destructive second stage:
+        // clear every message on this page while keeping the page itself.
+        await deleteAttachmentObjectsForMessages(env, messageIds);
+
+        await supabaseFetch(env, "messages", {
+          method: "DELETE",
+          query:
+            `?channel_id=eq.${encodeURIComponent(channel.id)}&page_id=eq.${encodeURIComponent(page.id)}`,
+          headers: { Prefer: "return=minimal" },
+        });
 
         await recordActivitySafe(env, user, channel.id, "POSTED");
 
         return response({
           ok: true,
-          clearedImages: imageAttachments.length,
-          clearedMessages,
+          stage: "page",
+          clearedExpiredAttachments: 0,
+          clearedMessages: messageIds.length,
+          needsFullClear: false,
         });
       }
 
