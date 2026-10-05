@@ -518,11 +518,17 @@ function bindMessageSwipe(article,message){
   let startX=0,startY=0,active=false,blocked=false,moved=false,pointerId=null;
   const reset=()=>{if(pointerId!==null){try{if(article.hasPointerCapture?.(pointerId))article.releasePointerCapture(pointerId)}catch(e){}}pointerId=null;active=false;blocked=false;moved=false;resetMessageSwipe(article)};
   article.addEventListener('pointerdown',e=>{
-    if(e.button!==0||e.target.closest('button,a,input,textarea,select,[contenteditable="true"]'))return;
+    // Keep text and code regions fully native so mouse/touch selection is never
+    // mistaken for the swipe-to-reply gesture.
+    if(
+      e.button!==0||
+      e.target.closest('.message-text,.message-code-block,button,a,input,textarea,select,[contenteditable="true"]')
+    )return;
     startX=e.clientX;startY=e.clientY;active=true;blocked=false;moved=false;pointerId=e.pointerId;
   });
   article.addEventListener('pointermove',e=>{
     if(!active||blocked)return;
+    if(e.target.closest('.message-text,.message-code-block')){blocked=true;return;}
     const dx=e.clientX-startX,dy=e.clientY-startY;
     if(!moved){
       if(Math.abs(dy)>10&&Math.abs(dy)>Math.abs(dx)){blocked=true;return;}
