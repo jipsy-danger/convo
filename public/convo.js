@@ -1,7 +1,7 @@
 const WORKER_URL='https://convo-api.atityaramsureshmanickam.workers.dev';
 let currentPin=null,currentUser=null,currentChannels=[],activeChannel=null,hiddenPin='',superAdminMode=false,superAdminJArmed=false,superAdminSession='',autoSubmitting=false,appLoading=false,messageSyncTimer=null,messageSyncInFlight=false,lastMessageSignature='',activePage=1,lastPage=1,replyTarget=null,postingMessage=false;
 try{currentPin=localStorage.getItem('convo_active_pin')||null;currentUser=JSON.parse(localStorage.getItem('convo_user')||'null');superAdminSession=localStorage.getItem('convo_superadmin_session')||''}catch(e){console.warn('Convo storage unavailable; starting fresh',e)}
-const $=id=>document.getElementById(id),messagePageMenu=$('messagePageMenu'),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')],btnPagePrev=$('btnPagePrev'),btnPageNext=$('btnPageNext'),messagePageIndicator=$('messagePageIndicator'),btnComposerPlus=$('btnComposerPlus'),fileInput=$('fileInput'),fileUploadQueue=$('fileUploadQueue'),msgInput=$('msgInput'),chatInputPreview=$('chatInputPreview'),chatInputShell=chatInputPreview?.parentElement,btnRenameChannel=$('btnRenameChannel'),renameChannelModal=$('renameChannelModal'),renameChannelForm=$('renameChannelForm'),renameChannelInput=$('renameChannelInput'),renameChannelError=$('renameChannelError'),btnCancelRenameChannel=$('btnCancelRenameChannel'),btnSubmitRenameChannel=$('btnSubmitRenameChannel'),replyComposer=$('replyComposer'),replyComposerAuthor=$('replyComposerAuthor'),replyComposerText=$('replyComposerText'),replyComposerClose=$('replyComposerClose');
+const $=id=>document.getElementById(id),messagePageMenu=$('messagePageMenu'),authForm=$('authForm'),pinInput=$('pinInput'),nameInput=$('nameInput'),newUserNameBlock=$('newUserNameBlock'),btnLogin=$('btnLogin'),btnLogout=$('btnLogout'),authOverlay=$('authOverlay'),accessCore=$('accessCore'),hudStatus=$('hudStatus'),hudHint=$('hudHint'),progressSegments=[...document.querySelectorAll('.hud-progress span')],btnPagePrev=$('btnPagePrev'),btnPageNext=$('btnPageNext'),messagePageIndicator=$('messagePageIndicator'),btnComposerPlus=$('btnComposerPlus'),fileInput=$('fileInput'),fileUploadQueue=$('fileUploadQueue'),msgInput=$('msgInput'),btnRenameChannel=$('btnRenameChannel'),renameChannelModal=$('renameChannelModal'),renameChannelForm=$('renameChannelForm'),renameChannelInput=$('renameChannelInput'),renameChannelError=$('renameChannelError'),btnCancelRenameChannel=$('btnCancelRenameChannel'),btnSubmitRenameChannel=$('btnSubmitRenameChannel'),replyComposer=$('replyComposer'),replyComposerAuthor=$('replyComposerAuthor'),replyComposerText=$('replyComposerText'),replyComposerClose=$('replyComposerClose');
 const esc=value=>String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
 const formatTime=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'':d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
 function focusAccess(){try{pinInput.focus({preventScroll:true})}catch(e){pinInput.focus()}}
@@ -904,7 +904,6 @@ const messageContextMenu=document.createElement('div');messageContextMenu.classN
 
     input.value='';
     input.style.height='';
-    renderComposerPreview();
     clearReplyTarget();
     window.convoClearMentionState?.();
 
@@ -939,22 +938,10 @@ composerForm?.addEventListener('submit',e=>{
   window.handlePostMessage?.();
 });
 
-function renderComposerPreview(){
-  if(!chatInputPreview||!msgInput)return;
-  const value=String(msgInput.value||'');
-  const escaped=esc(value);
-  chatInputPreview.innerHTML=escaped.split('`').join('<span class="composer-markdown-fence">`</span>');
-  chatInputPreview.scrollTop=msgInput.scrollTop;
-  chatInputPreview.scrollLeft=msgInput.scrollLeft;
-}
 msgInput?.addEventListener('input',()=>{
   msgInput.style.height='auto';
   msgInput.style.height=Math.min(msgInput.scrollHeight,120)+'px';
-  renderComposerPreview();
 });
-msgInput?.addEventListener('scroll',renderComposerPreview);
-if(chatInputShell)chatInputShell.classList.add('composer-preview-active');
-renderComposerPreview();
 
 const channelModal=$('channelModal'),channelForm=$('channelForm'),channelNameInput=$('channelNameInput'),channelDescriptionInput=$('channelDescriptionInput'),channelModalError=$('channelModalError'),btnSubmitChannel=$('btnSubmitChannel');
 function closeChannelModal(){channelModal.hidden=true;channelForm.reset();channelModalError.textContent='';btnSubmitChannel.disabled=false;btnSubmitChannel.textContent='Create';window.privateChannelResetCreate?.()}
